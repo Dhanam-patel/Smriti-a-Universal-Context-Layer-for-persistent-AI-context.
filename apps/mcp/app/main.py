@@ -213,30 +213,14 @@ class MCPMessagesASGI:
 
     async def __call__(self, scope, receive, send):
         request = Request(scope, receive, send)
-        
-        # In SSE MCP, the initial GET /mcp/sse request is authenticated.
-        # The SseServerTransport generates a secure session_id which is passed in the POST URL.
-        # Claude.ai cannot pass the api_key in the POST URL, so we bypass strict api_key auth here 
-        # and rely on the SseServerTransport's internal session validation.
-        session_id = request.query_params.get("session_id")
-        if not session_id:
-            response = Response(content="Missing session_id", status_code=401)
+        try:
+            user_info = authenticate_mcp_client(request)
+        except Exception as e:
+            response = Response(content="Unauthorized", status_code=401)
             await response(scope, receive, send)
             return
-            
-        # We need to attach the user_info to the state so tools can access it.
-        # Since we bypassed auth, we must retrieve the user_info from the established session!
-        # The SseServerTransport doesn't expose it easily, but we injected it into the scope during GET.
-        # Actually, the tools handle_call_tool uses ctx.request, which is the POST request.
-        # We need a way to pass the user_info. Let's create a global mapping for sessions!
-        
-        if session_id in active_sessions:
-            request.state.user_info = active_sessions[session_id]
-        else:
-            response = Response(content="Invalid or expired session", status_code=401)
-            await response(scope, receive, send)
-            return
-            
+
+        request.state.user_info = user_info
         class DummyAuthUser:
             pass
         scope["user"] = DummyAuthUser()

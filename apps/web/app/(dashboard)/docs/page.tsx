@@ -70,21 +70,38 @@ export default function DocsPage() {
             
             <TabsContent value="claude-web" className="space-y-4 pt-4">
               <div className="text-sm text-muted-foreground space-y-2">
-                <p>When connecting Smriti as a Custom Connector in <strong>Claude for Enterprise/Teams</strong>, the browser does not support custom Authorization headers. Therefore, you must pass the API key in the URL.</p>
+                <p>To connect Smriti as a Custom Connector in <strong>Claude for Enterprise/Teams</strong>, use the official Header-based authentication method:</p>
                 <ol className="list-decimal pl-4 space-y-1">
                   <li>Create a new Custom Connector.</li>
                   <li>Set Authentication to <strong>No sign-in</strong>.</li>
                   <li>Set Transport to <strong>SSE (legacy)</strong>.</li>
-                  <li>Paste the exact URL below into the connection field:</li>
+                  <li>Paste the Server URL below into the <strong>URL</strong> field.</li>
+                  <li>In the <strong>Request headers</strong> section, add your <code>Authorization</code> header exactly as shown below.</li>
                 </ol>
               </div>
-              <div className="relative">
-                <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
-                  <code>{claudeWebUrl}</code>
-                </pre>
-                <Button variant="outline" size="icon" className="absolute top-2 right-2 h-8 w-8" onClick={() => copyToClipboard(claudeWebUrl)}>
-                  <Copy className="h-4 w-4" />
-                </Button>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold mb-1">Server URL</p>
+                  <div className="relative">
+                    <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
+                      <code>{mcpServerUrl}/mcp/sse</code>
+                    </pre>
+                    <Button variant="outline" size="icon" className="absolute top-2 right-2 h-8 w-8" onClick={() => copyToClipboard(`${mcpServerUrl}/mcp/sse`)}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold mb-1">Request Header</p>
+                  <div className="relative">
+                    <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
+                      <code>Authorization: Bearer smr_YOUR_GENERATED_API_KEY</code>
+                    </pre>
+                    <Button variant="outline" size="icon" className="absolute top-2 right-2 h-8 w-8" onClick={() => copyToClipboard(`Authorization: Bearer smr_YOUR_GENERATED_API_KEY`)}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             </TabsContent>
 
