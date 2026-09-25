@@ -200,12 +200,7 @@ async def mcp_sse(request: Request, user_info: dict = Depends(authenticate_mcp_c
         if 'session_id' in locals() and session_id in active_sessions:
             del active_sessions[session_id]
 
-@app.post("/mcp/sse")
-async def mcp_sse_post(request: Request):
-    # Return 404 to explicitly tell Claude.ai that Streamable HTTP (POST) is not supported 
-    # at this endpoint, forcing it to correctly fallback to SSE (GET).
-    from fastapi import Response
-    return Response(content="Not Found", status_code=404)
+
 
 class MCPMessagesASGI:
     def __init__(self, sse_transport):
