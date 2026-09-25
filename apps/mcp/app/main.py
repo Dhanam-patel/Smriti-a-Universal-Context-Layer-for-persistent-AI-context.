@@ -204,58 +204,170 @@ async def mcp_sse(request: Request, user_info: dict = Depends(authenticate_mcp_c
 
 @app.post("/mcp/sse")
 async def mcp_sse_post(request: Request):
-    # Claude's custom connector validator is aggressively probing with a POST request.
-    # It sends an MCP 'initialize' request and expects a valid JSON-RPC success response.
     try:
         body = await request.json()
     except:
         body = {}
         
     req_id = body.get("id", 1)
+    method = body.get("method")
     
-    # If Claude is probing the initialization, give it a perfectly formatted spoofed success response
-    # to bypass the validator.
-    if body.get("method") == "initialize":
+    # 1. Bypass auth for initialize to pass Claude's strict validator
+    if method == "initialize":
         return {
             "jsonrpc": "2.0",
             "id": req_id,
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {
-                    "tools": {}
+                    "tools": {"listChanged": False}
                 },
                 "serverInfo": {
-                    "name": "UCL-MCP",
+                    "name": "UCL-MCP-Stateless",
                     "version": "1.0.0"
                 }
             }
         }
-    
-    # Generic fallback that satisfies JSON-RPC
-    return {
-        "jsonrpc": "2.0",
-        "id": req_id,
-        "result": {}
-    }
+    if method == "notifications/initialized":
+        return {"jsonrpc": "2.0"}
+        
+    # 2. Enforce auth for all actual tool calls
+    try:
+        user_info = authenticate_mcp_client(request)
+    except Exception as e:
+        return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32000, "message": "Unauthorized"}}
+        
+    # 3. Handle tools/list
+    if method == "tools/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": "read_context",
+                        "description": "Reads the user's UCL context from a specific chat",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "chat": {"type": "string", "description": "The UCL chat name/slug"},
+                                "query": {"type": "string", "description": "The search query"}
+                            },
+                            "required": ["chat", "query"]
+                        }
+                    },
+                    {
+                        "name": "write_context",
+                        "description": "Writes new information to the user's UCL context",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "chat": {"type": "string", "description": "The UCL chat name/slug"},
+                                "content": {"type": "string", "description": "The content to save"}
+                            },
+                            "required": ["chat", "content"]
+                        }
+                    }
+                ]
+            }
+        }
+        
+    # 4. Handle tools/call
+    if method == "tools/call":
+        params = body.get("params", {})
+        tool_name = params.get("name")
+        args = params.get("arguments", {})
+        
+        user_id = user_info["user_id"]
+        pc_conn = user_info["pinecone_connection"]
+        chat_slug = args.get("chat")
+        
+        if not chat_slug:
+            return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32602, "message": "Missing chat argument"}}
+            
+        chat_resp = supabase.table("chats").select("pinecone_namespace").eq("slug", chat_slug).eq("user_id", user_id).execute()
+        if not chat_resp.data or len(chat_resp.data) == 0:
+            return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32000, "message": f"Chat '{chat_slug}' not found or access denied."}}
+            
+        namespace = chat_resp.data[0]["pinecone_namespace"]
+        pc = Pinecone(api_key=pc_conn["encrypted_api_key"])
+        model = pc_conn.get("embedding_model") or "multilingual-e5-large"
+        index = pc.index(pc_conn["index_name"])
+        
+        if tool_name == "read_context":
+            query = args.get("query")
+            if not query:
+                return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32602, "message": "Missing query argument"}}
+                
+            embedding_response = pc.inference.embed(
+                model=model, inputs=[query], parameters={"input_type": "query", "truncate": "END"}
+            )
+            query_response = index.query(namespace=namespace, vector=embedding_response[0].values, top_k=5, include_metadata=True)
+            
+            results_text = "Context Search Results:\n\n"
+            for match in query_response.matches:
+                results_text += f"- {match.metadata.get('content', '')} (Score: {match.score})\n"
+                
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": results_text}]
+                }
+            }
+            
+        elif tool_name == "write_context":
+            content = args.get("content")
+            if not content:
+                return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32602, "message": "Missing content argument"}}
+                
+            embedding_response = pc.inference.embed(
+                model=model, inputs=[content], parameters={"input_type": "passage", "truncate": "END"}
+            )
+            
+            record_id = f"ctx_{uuid.uuid4()}"
+            now = datetime.datetime.utcnow().isoformat()
+            index.upsert(
+                namespace=namespace,
+                vectors=[{
+                    "id": record_id,
+                    "values": embedding_response[0].values,
+                    "metadata": {"content": content, "source": "mcp", "created_at": now, "updated_at": now}
+                }]
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": f"Successfully wrote context to chat {chat_slug}."}]
+                }
+            }
+            
+    # Generic fallback
+    return {"jsonrpc": "2.0", "id": req_id, "result": {}}
 
+# Keep the old SSE routes intact just in case, but they are functionally bypassed 
+# for Claude.ai Streamable HTTP clients now!
 class MCPMessagesASGI:
     def __init__(self, sse_transport):
         self.sse = sse_transport
 
     async def __call__(self, scope, receive, send):
         request = Request(scope, receive, send)
-        try:
-            user_info = authenticate_mcp_client(request)
-        except Exception as e:
-            response = Response(content="Unauthorized", status_code=401)
-            await response(scope, receive, send)
-            return
-
-        request.state.user_info = user_info
+        session_id = request.query_params.get("sessionId")
+        if session_id and session_id in active_sessions:
+            request.state.user_info = active_sessions[session_id]
+        else:
+            try:
+                user_info = authenticate_mcp_client(request)
+                request.state.user_info = user_info
+            except Exception as e:
+                response = Response(content="Unauthorized", status_code=401)
+                await response(scope, receive, send)
+                return
         class DummyAuthUser:
             pass
         scope["user"] = DummyAuthUser()
-        
         await self.sse.handle_post_message(scope, receive, send)
 
 app.add_route("/mcp/messages", MCPMessagesASGI(sse), methods=["POST", "OPTIONS"])
