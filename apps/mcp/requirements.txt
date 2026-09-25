@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 mcp
-pinecone-client
+pinecone
 supabase
 python-dotenv
 pydantic

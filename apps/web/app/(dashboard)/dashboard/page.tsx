@@ -69,8 +69,8 @@ export default function DashboardPage() {
         />
         <StatusCard
           icon={<Plug className="h-5 w-5" />}
-          label="MCP Connections"
-          value={`${mcpConnections.length} active`}
+          label="MCP Identity"
+          value={mcpConnections.length > 0 ? 'Active' : 'Inactive'}
           connected={mcpConnections.length > 0}
           href="/mcp"
           detail={undefined}
@@ -160,7 +160,7 @@ export default function DashboardPage() {
               />
               <SetupStep
                 done={false}
-                label="Create an MCP connection"
+                label="Generate an MCP API Key"
                 href="/mcp"
               />
             </div>

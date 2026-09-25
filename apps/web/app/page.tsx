@@ -125,8 +125,8 @@ export default async function LandingPage() {
             />
             <Step
               num={4}
-              title="Create an MCP connection"
-              description="Generate a user-specific MCP endpoint with authentication credentials."
+              title="Generate an MCP API Key"
+              description="Generate a single secure API key to authenticate all your AI applications."
             />
             <Step
               num={5}

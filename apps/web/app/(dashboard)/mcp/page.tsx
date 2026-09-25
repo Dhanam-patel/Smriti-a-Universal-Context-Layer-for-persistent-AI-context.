@@ -30,13 +30,22 @@ export default function MCPPage() {
 
   useEffect(() => {
     async function loadData() {
-      const { data } = await supabase
-        .from('mcp_connections')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      setConnections(data || []);
-      setLoading(false);
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const res = await fetch('/api/mcp/connections', {
+          headers: {
+            Authorization: `Bearer ${session.session?.access_token}`,
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setConnections(data.connections || []);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
     }
     loadData();
   }, [supabase]);
@@ -59,7 +68,7 @@ export default function MCPPage() {
       } else {
         const data = await res.json();
         toast.success('MCP connection created');
-        setConnections([data.connection, ...connections]);
+        setConnections([data.connection]);
         setNewConnection(data.connection);
         setNewSecret(data.secret);
       }
@@ -102,10 +111,14 @@ export default function MCPPage() {
           }
         }}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New Connection
-            </Button>
+            {connections.length === 0 ? (
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Generate API Key
+              </Button>
+            ) : (
+              <div className="hidden"></div>
+            )}
           </DialogTrigger>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
@@ -126,8 +139,8 @@ export default function MCPPage() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">MCP Endpoint</label>
                   <div className="flex gap-2">
-                    <Input readOnly value={`${mcpServerUrl}/mcp/${newConnection.connection_id}`} />
-                    <Button variant="outline" size="icon" onClick={() => copyToClipboard(`${mcpServerUrl}/mcp/${newConnection.connection_id}`)}>
+                    <Input readOnly value={`${mcpServerUrl}/mcp/sse`} />
+                    <Button variant="outline" size="icon" onClick={() => copyToClipboard(`${mcpServerUrl}/mcp/sse`)}>
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>
@@ -150,7 +163,7 @@ export default function MCPPage() {
             ) : (
               <div className="space-y-4 py-4">
                 <p className="text-sm text-muted-foreground">
-                  This will generate a new connection ID and a secret credential that AI agents can use to access your Smriti contexts.
+                  This will generate a new API key that AI agents can use to access your Smriti contexts. Any existing API keys will be permanently revoked.
                 </p>
                 <Button onClick={handleCreate} disabled={creating} className="w-full">
                   {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -166,44 +179,59 @@ export default function MCPPage() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <Plug className="mb-4 h-12 w-12 text-muted-foreground/40" />
-            <h3 className="text-lg font-medium">No connections yet</h3>
+            <h3 className="text-lg font-medium">No API Key Generated</h3>
             <p className="mt-1 text-sm text-muted-foreground max-w-sm">
-              Create an MCP connection to allow external AI applications to read and write your Smriti contexts.
+              Generate an MCP API key to allow external AI applications to securely read and write to your Smriti contexts.
             </p>
             <Button onClick={() => setCreateOpen(true)} className="mt-6">
               <Plus className="mr-2 h-4 w-4" />
-              Create your first connection
+              Generate API Key
             </Button>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {connections.map((conn) => (
-            <Card key={conn.id} className="transition-all hover:shadow-md">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-mono text-primary">
-                    {conn.connection_id}
-                  </CardTitle>
-                  <Badge variant="outline" className="bg-success/5 text-success">
-                    Active
-                  </Badge>
-                </div>
-                <CardDescription>
-                  Created {formatDistanceToNow(new Date(conn.created_at), { addSuffix: true })}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Plug className="h-4 w-4" />
-                  {conn.last_used_at 
-                    ? `Last used ${formatDistanceToNow(new Date(conn.last_used_at), { addSuffix: true })}` 
-                    : 'Never used'}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <Card className="transition-all hover:shadow-md max-w-2xl">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-semibold text-primary">
+                MCP Identity Active
+              </CardTitle>
+              <Badge variant="outline" className="bg-success/5 text-success">
+                Active
+              </Badge>
+            </div>
+            <CardDescription>
+              Created {formatDistanceToNow(new Date(connections[0].created_at), { addSuffix: true })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground pb-4 border-b">
+              <Plug className="h-4 w-4" />
+              {connections[0].last_used_at 
+                ? `Last used ${formatDistanceToNow(new Date(connections[0].last_used_at), { addSuffix: true })}` 
+                : 'Never used'}
+            </div>
+            
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Connect your AI Applications</p>
+              <div className="bg-muted p-3 rounded-md text-sm font-mono flex items-center justify-between">
+                <span>{mcpServerUrl}/mcp/sse</span>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => copyToClipboard(`${mcpServerUrl}/mcp/sse`)}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use the endpoint above and your API key to configure MCP clients like Claude Desktop.
+              </p>
+            </div>
+            
+            <div className="pt-4 flex justify-end">
+              <Button variant="outline" onClick={() => setCreateOpen(true)} className="text-destructive border-destructive/30 hover:bg-destructive/10">
+                Regenerate API Key
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
