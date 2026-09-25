@@ -11,7 +11,17 @@ import datetime
 import json
 from supabase import create_client
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="UCL MCP Server")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 supabase = create_client(
     settings.supabase_url,

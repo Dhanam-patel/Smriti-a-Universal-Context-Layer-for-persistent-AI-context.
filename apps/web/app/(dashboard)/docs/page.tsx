@@ -11,7 +11,8 @@ export default function DocsPage() {
     toast.success('Copied to clipboard');
   };
 
-  const mcpServerUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  // Use the hosted MCP server URL
+  const mcpServerUrl = process.env.NEXT_PUBLIC_MCP_SERVER_URL || 'https://smriti-ucl-mcp.vercel.app';
   
   const mcpConfigCode = `{
   "mcpServers": {

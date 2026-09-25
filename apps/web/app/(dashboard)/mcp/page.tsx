@@ -91,7 +91,7 @@ export default function MCPPage() {
     );
   }
 
-  const mcpServerUrl = typeof window !== 'undefined' ? `${window.location.origin}` : '';
+  const mcpServerUrl = process.env.NEXT_PUBLIC_MCP_SERVER_URL || 'https://smriti-ucl-mcp.vercel.app';
 
   return (
     <div className="space-y-8 animate-fade-in">
