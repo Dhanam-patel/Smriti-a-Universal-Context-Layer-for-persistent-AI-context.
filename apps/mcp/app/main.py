@@ -231,13 +231,7 @@ async def mcp_sse_post(request: Request):
     if method == "notifications/initialized":
         return {"jsonrpc": "2.0"}
         
-    # 2. Enforce auth for all actual tool calls
-    try:
-        user_info = authenticate_mcp_client(request)
-    except Exception as e:
-        return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32000, "message": "Unauthorized"}}
-        
-    # 3. Handle tools/list
+    # 2. Handle tools/list (Publicly discoverable)
     if method == "tools/list":
         return {
             "jsonrpc": "2.0",
@@ -271,6 +265,12 @@ async def mcp_sse_post(request: Request):
                 ]
             }
         }
+        
+    # 3. Enforce auth for actual tool execution
+    try:
+        user_info = authenticate_mcp_client(request)
+    except Exception as e:
+        return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32000, "message": "Unauthorized"}}
         
     # 4. Handle tools/call
     if method == "tools/call":
