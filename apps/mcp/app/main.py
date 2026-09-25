@@ -202,6 +202,19 @@ async def mcp_sse(request: Request, user_info: dict = Depends(authenticate_mcp_c
 
 
 
+@app.post("/mcp/sse")
+async def mcp_sse_post(request: Request):
+    # Claude's custom connector validator aggressively probes the configured URL with a POST request
+    # even when configured for SSE transport. It expects a valid MCP JSON-RPC response or a 401 auth error.
+    # By returning a JSON-RPC Invalid Request error, Claude sees that this is a valid MCP endpoint.
+    return {
+        "jsonrpc": "2.0",
+        "error": {
+            "code": -32600,
+            "message": "Invalid Request: This is an SSE endpoint. Please connect via GET /mcp/sse."
+        }
+    }
+
 class MCPMessagesASGI:
     def __init__(self, sse_transport):
         self.sse = sse_transport
