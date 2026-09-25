@@ -186,6 +186,13 @@ async def mcp_sse(request: Request, user_info: dict = Depends(authenticate_mcp_c
     async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
         await server.run(streams[0], streams[1], server.create_initialization_options())
 
+@app.post("/mcp/sse")
+async def mcp_sse_post(request: Request):
+    # Claude.ai probes the URL with a POST request. We return 401 to properly signal
+    # that this server requires authentication, rather than returning 405 Method Not Allowed.
+    from fastapi import HTTPException
+    raise HTTPException(status_code=401, detail="Authentication required")
+
 class MCPMessagesASGI:
     def __init__(self, sse_transport):
         self.sse = sse_transport
