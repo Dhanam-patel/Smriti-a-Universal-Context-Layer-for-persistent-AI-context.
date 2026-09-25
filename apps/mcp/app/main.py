@@ -172,11 +172,11 @@ sse = SseServerTransport("/mcp/messages")
 def health_check():
     return {"status": "ok"}
 
+active_sessions = {}
+
 @app.get("/mcp/sse")
 async def mcp_sse(request: Request, user_info: dict = Depends(authenticate_mcp_client)):
-    # Authenticate via Depend sets request.state.user_info, but wait, this is a GET.
-    # The MCP client reconnects. But since Starlette might pass the Request context differently,
-    # let's inject user_info into the user object of the scope so SseServerTransport can use it for auth verification.
+    # Authenticate via Depend sets request.state.user_info
     class DummyAuthUser:
         pass
     dummy = DummyAuthUser()
@@ -184,7 +184,21 @@ async def mcp_sse(request: Request, user_info: dict = Depends(authenticate_mcp_c
     sse._session_owners = getattr(sse, "_session_owners", {})
     
     async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+        # Get the session_id that was just created by connect_sse
+        # It's usually the last one added, but let's extract it safely
+        # Actually, connect_sse internally handles the stream setup.
+        # We can extract the session ID from the context.
+        # But wait, it's easier to just pull it from the sse sessions dict
+        if hasattr(sse, "sessions") and sse.sessions:
+            # The most recently added session
+            session_id = list(sse.sessions.keys())[-1]
+            active_sessions[session_id] = user_info
+            
         await server.run(streams[0], streams[1], server.create_initialization_options())
+        
+        # Cleanup when done
+        if 'session_id' in locals() and session_id in active_sessions:
+            del active_sessions[session_id]
 
 @app.post("/mcp/sse")
 async def mcp_sse_post(request: Request):
@@ -199,14 +213,30 @@ class MCPMessagesASGI:
 
     async def __call__(self, scope, receive, send):
         request = Request(scope, receive, send)
-        try:
-            user_info = authenticate_mcp_client(request)
-        except Exception as e:
-            response = Response(content="Unauthorized", status_code=401)
+        
+        # In SSE MCP, the initial GET /mcp/sse request is authenticated.
+        # The SseServerTransport generates a secure session_id which is passed in the POST URL.
+        # Claude.ai cannot pass the api_key in the POST URL, so we bypass strict api_key auth here 
+        # and rely on the SseServerTransport's internal session validation.
+        session_id = request.query_params.get("session_id")
+        if not session_id:
+            response = Response(content="Missing session_id", status_code=401)
             await response(scope, receive, send)
             return
-
-        request.state.user_info = user_info
+            
+        # We need to attach the user_info to the state so tools can access it.
+        # Since we bypassed auth, we must retrieve the user_info from the established session!
+        # The SseServerTransport doesn't expose it easily, but we injected it into the scope during GET.
+        # Actually, the tools handle_call_tool uses ctx.request, which is the POST request.
+        # We need a way to pass the user_info. Let's create a global mapping for sessions!
+        
+        if session_id in active_sessions:
+            request.state.user_info = active_sessions[session_id]
+        else:
+            response = Response(content="Invalid or expired session", status_code=401)
+            await response(scope, receive, send)
+            return
+            
         class DummyAuthUser:
             pass
         scope["user"] = DummyAuthUser()
