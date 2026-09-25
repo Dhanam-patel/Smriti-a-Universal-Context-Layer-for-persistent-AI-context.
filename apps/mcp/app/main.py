@@ -187,11 +187,11 @@ async def mcp_sse(request: Request, user_info: dict = Depends(authenticate_mcp_c
         await server.run(streams[0], streams[1], server.create_initialization_options())
 
 @app.post("/mcp/sse")
-async def mcp_sse_post(request: Request, user_info: dict = Depends(authenticate_mcp_client)):
-    # Claude.ai probes the URL with a POST request. If the user provided the api_key
-    # query parameter, authenticate_mcp_client will succeed and we return 200 OK
-    # to let Claude know the endpoint is valid and authenticated.
-    return {"status": "ok", "message": "Probe successful"}
+async def mcp_sse_post(request: Request):
+    # Return 404 to explicitly tell Claude.ai that Streamable HTTP (POST) is not supported 
+    # at this endpoint, forcing it to correctly fallback to SSE (GET).
+    from fastapi import Response
+    return Response(content="Not Found", status_code=404)
 
 class MCPMessagesASGI:
     def __init__(self, sse_transport):
