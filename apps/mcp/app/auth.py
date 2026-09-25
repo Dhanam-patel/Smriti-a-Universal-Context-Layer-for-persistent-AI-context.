@@ -13,14 +13,22 @@ supabase: Client = create_client(
 def authenticate_mcp_client(request: Request):
     """
     Authenticates the MCP client.
-    Extracts the Bearer token (secret credential), hashes it, and looks it up in Supabase mcp_connections.
-    Returns user info and Pinecone configuration if valid.
+    Extracts the Bearer token (secret credential) from header or query param.
     """
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authentication token")
+    token = None
     
-    token = auth_header.split(" ")[1]
+    # 1. Try Authorization header
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        
+    # 2. Try query parameter (needed for browser EventSource and Claude.ai web)
+    if not token:
+        token = request.query_params.get("api_key")
+        
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authentication token")
+    
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     
     # Validate token_hash against Supabase DB

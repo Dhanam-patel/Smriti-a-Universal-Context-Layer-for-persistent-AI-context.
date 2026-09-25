@@ -1,5 +1,6 @@
 'use client';
 
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,9 +15,9 @@ export default function DocsPage() {
   // Use the hosted MCP server URL
   const mcpServerUrl = process.env.NEXT_PUBLIC_MCP_SERVER_URL || 'https://smriti-ucl-mcp.vercel.app';
   
-  const mcpConfigCode = `{
+  const antigravityConfigCode = `{
   "mcpServers": {
-    "SmritiMCP": {
+    "Smriti": {
       "type": "sse",
       "url": "${mcpServerUrl}/mcp/sse",
       "headers": {
@@ -25,6 +26,23 @@ export default function DocsPage() {
     }
   }
 }`;
+
+  const claudeDesktopConfigCode = `{
+  "mcpServers": {
+    "Smriti": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "${mcpServerUrl}/mcp/sse",
+        "--header",
+        "Authorization: Bearer smr_YOUR_GENERATED_API_KEY"
+      ]
+    }
+  }
+}`;
+
+  const claudeWebUrl = `${mcpServerUrl}/mcp/sse?api_key=smr_YOUR_GENERATED_API_KEY`;
 
   return (
     <div className="space-y-8 animate-fade-in max-w-4xl">
@@ -39,24 +57,65 @@ export default function DocsPage() {
         <CardHeader>
           <CardTitle>1. Connecting to the MCP</CardTitle>
           <CardDescription>
-            Add the following configuration to your MCP client (such as Claude Desktop or AntiGravity IDE).
-            Make sure to replace the API key with your generated key from the MCP dashboard.
+            Choose your AI Client below to see the specific integration architecture and configuration steps.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="relative">
-            <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
-              <code>{mcpConfigCode}</code>
-            </pre>
-            <Button
-              variant="outline"
-              size="icon"
-              className="absolute top-2 right-2 h-8 w-8"
-              onClick={() => copyToClipboard(mcpConfigCode)}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
+          <Tabs defaultValue="claude-web" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="claude-web">Claude.ai (Web)</TabsTrigger>
+              <TabsTrigger value="antigravity">AntiGravity IDE</TabsTrigger>
+              <TabsTrigger value="claude-desktop">Claude Desktop</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="claude-web" className="space-y-4 pt-4">
+              <div className="text-sm text-muted-foreground space-y-2">
+                <p>When connecting Smriti as a Custom Connector in <strong>Claude for Enterprise/Teams</strong>, the browser does not support custom Authorization headers. Therefore, you must pass the API key in the URL.</p>
+                <ol className="list-decimal pl-4 space-y-1">
+                  <li>Create a new Custom Connector.</li>
+                  <li>Set Authentication to <strong>No sign-in</strong>.</li>
+                  <li>Set Transport to <strong>SSE (legacy)</strong>.</li>
+                  <li>Paste the exact URL below into the connection field:</li>
+                </ol>
+              </div>
+              <div className="relative">
+                <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
+                  <code>{claudeWebUrl}</code>
+                </pre>
+                <Button variant="outline" size="icon" className="absolute top-2 right-2 h-8 w-8" onClick={() => copyToClipboard(claudeWebUrl)}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="antigravity" className="space-y-4 pt-4">
+              <div className="text-sm text-muted-foreground space-y-2">
+                <p>AntiGravity natively supports SSE HTTP servers. Add the following to your <code>mcp_config.json</code>:</p>
+              </div>
+              <div className="relative">
+                <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
+                  <code>{antigravityConfigCode}</code>
+                </pre>
+                <Button variant="outline" size="icon" className="absolute top-2 right-2 h-8 w-8" onClick={() => copyToClipboard(antigravityConfigCode)}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="claude-desktop" className="space-y-4 pt-4">
+              <div className="text-sm text-muted-foreground space-y-2">
+                <p>Claude Desktop natively prefers local shell commands over HTTP endpoints. Use the <code>mcp-remote</code> bridge command in your <code>claude_desktop_config.json</code>:</p>
+              </div>
+              <div className="relative">
+                <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
+                  <code>{claudeDesktopConfigCode}</code>
+                </pre>
+                <Button variant="outline" size="icon" className="absolute top-2 right-2 h-8 w-8" onClick={() => copyToClipboard(claudeDesktopConfigCode)}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
