@@ -37,7 +37,7 @@ export default function ContextPage() {
         supabase.from('pinecone_connections').select('id, index_name, host, embedding_model, status').maybeSingle(),
       ]);
       setChats(chatsRes.data || []);
-      setPinecone(pineconeRes.data);
+      setPinecone(pineconeRes.data as PineconeConnection | null);
       setLoading(false);
     }
     loadData();

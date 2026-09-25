@@ -24,7 +24,7 @@ export default function DashboardPage() {
         supabase.from('chats').select('*').order('created_at', { ascending: false }),
       ]);
 
-      setPinecone(pineconeRes.data);
+      setPinecone(pineconeRes.data as PineconeConnection | null);
       setMcpConnections(mcpRes.data || []);
       setChats(chatsRes.data || []);
       setLoading(false);

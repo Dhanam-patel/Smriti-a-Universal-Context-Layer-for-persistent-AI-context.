@@ -37,7 +37,7 @@ export default function SettingsPage() {
         .select('id, index_name, host, embedding_model, status')
         .maybeSingle();
       
-      setPinecone(data);
+      setPinecone(data as PineconeConnection | null);
       if (data) {
         setIndexName(data.index_name);
         setHost(data.host || '');

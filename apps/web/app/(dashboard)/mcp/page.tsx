@@ -49,7 +49,7 @@ export default function MCPPage() {
       const res = await fetch('/api/mcp/connections', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${session.data.session?.access_token}`,
+          Authorization: `Bearer ${session.session?.access_token}`,
         },
       });
 

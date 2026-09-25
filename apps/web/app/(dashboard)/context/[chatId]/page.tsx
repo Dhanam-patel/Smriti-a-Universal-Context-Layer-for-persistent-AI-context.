@@ -203,7 +203,7 @@ export default function ContextDetailPage() {
                       <Badge variant="secondary">
                         Score: {(result.score * 100).toFixed(1)}%
                       </Badge>
-                      {result.metadata?.created_at && (
+                      {Boolean(result.metadata?.created_at) && (
                         <span className="text-xs text-muted-foreground">
                           {formatDistanceToNow(
                             new Date(result.metadata.created_at as string),
