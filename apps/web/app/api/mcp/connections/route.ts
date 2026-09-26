@@ -105,7 +105,7 @@ export async function POST(request: Request) {
     const credentialHash = crypto.createHash('sha256').update(secret).digest('hex');
 
     // Insert into mcp_connections (we can leave connection_id as just 'mcp' or a dummy since it's not used in URLs anymore, but let's keep it non-null)
-    const { data: connection, error } = await adminSupabase
+    const { data: connection, error } = await supabase
       .from('mcp_connections')
       .insert({
         user_id: user.id,
