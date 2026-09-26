@@ -104,12 +104,12 @@ export async function POST(request: Request) {
     // Hash credential for storage
     const credentialHash = crypto.createHash('sha256').update(secret).digest('hex');
 
-    // Insert into mcp_connections (we can leave connection_id as just 'mcp' or a dummy since it's not used in URLs anymore, but let's keep it non-null)
-    const { data: connection, error } = await supabase
+    // Insert into mcp_connections using adminSupabase to bypass RLS
+    const { data: connection, error } = await adminSupabase
       .from('mcp_connections')
       .insert({
         user_id: user.id,
-        connection_id: 'default',
+        connection_id: `conn_${crypto.randomUUID()}`,
         credential_hash: credentialHash,
         status: 'active',
       })

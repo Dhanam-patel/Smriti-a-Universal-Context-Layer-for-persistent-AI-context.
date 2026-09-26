@@ -5,6 +5,8 @@ import { Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
 export default function DocsPage() {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -14,17 +16,22 @@ export default function DocsPage() {
   // Use the hosted MCP server URL
   const mcpServerUrl = process.env.NEXT_PUBLIC_MCP_SERVER_URL || 'https://smriti-ucl-mcp.vercel.app';
   
-  const mcpConfigCode = `{
+  const mcpRemoteConfigCode = `{
   "mcpServers": {
-    "SmritiMCP": {
-      "type": "sse",
-      "url": "${mcpServerUrl}/mcp/sse",
-      "headers": {
-        "Authorization": "Bearer smr_YOUR_GENERATED_API_KEY"
-      }
+    "Smriti": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "${mcpServerUrl}/mcp/sse",
+        "--header",
+        "Authorization: Bearer smr_YOUR_GENERATED_API_KEY"
+      ]
     }
   }
 }`;
+
+  const cursorCommand = `npx -y mcp-remote ${mcpServerUrl}/mcp/sse --header "Authorization: Bearer smr_YOUR_GENERATED_API_KEY"`;
 
   return (
     <div className="space-y-8 animate-fade-in max-w-4xl">
@@ -39,24 +46,82 @@ export default function DocsPage() {
         <CardHeader>
           <CardTitle>1. Connecting to the MCP</CardTitle>
           <CardDescription>
-            Add the following configuration to your MCP client (such as Claude Desktop or AntiGravity IDE).
-            Make sure to replace the API key with your generated key from the MCP dashboard.
+            Select your IDE or tool to see how to add the Smriti MCP. Make sure to replace the API key placeholder with your actual generated key.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="relative">
-            <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
-              <code>{mcpConfigCode}</code>
-            </pre>
-            <Button
-              variant="outline"
-              size="icon"
-              className="absolute top-2 right-2 h-8 w-8"
-              onClick={() => copyToClipboard(mcpConfigCode)}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
+          <Tabs defaultValue="antigravity" className="w-full">
+            <TabsList className="grid w-full grid-cols-4 mb-4">
+              <TabsTrigger value="antigravity">AntiGravity IDE</TabsTrigger>
+              <TabsTrigger value="claude">Claude Desktop</TabsTrigger>
+              <TabsTrigger value="cursor">Cursor IDE</TabsTrigger>
+              <TabsTrigger value="claude-web">Claude.ai (Web)</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="antigravity" className="space-y-4">
+              <p className="text-sm text-muted-foreground">Add this to your <code>mcp_config.json</code> file.</p>
+              <div className="relative">
+                <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
+                  <code>{mcpRemoteConfigCode}</code>
+                </pre>
+                <Button
+                  variant="outline" size="icon"
+                  className="absolute top-2 right-2 h-8 w-8"
+                  onClick={() => copyToClipboard(mcpRemoteConfigCode)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="claude" className="space-y-4">
+              <p className="text-sm text-muted-foreground">Add this to your <code>claude_desktop_config.json</code> file and restart the app.</p>
+              <div className="relative">
+                <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
+                  <code>{mcpRemoteConfigCode}</code>
+                </pre>
+                <Button
+                  variant="outline" size="icon"
+                  className="absolute top-2 right-2 h-8 w-8"
+                  onClick={() => copyToClipboard(mcpRemoteConfigCode)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="cursor" className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                In Cursor, go to <strong>Settings &gt; Features &gt; MCP</strong> and add a new server.
+                <br />Set the type to <code>command</code> and paste the following:
+              </p>
+              <div className="relative">
+                <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto whitespace-pre-wrap">
+                  <code>{cursorCommand}</code>
+                </pre>
+                <Button
+                  variant="outline" size="icon"
+                  className="absolute top-2 right-2 h-8 w-8"
+                  onClick={() => copyToClipboard(cursorCommand)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="claude-web" className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                When adding a Custom Connector in Claude.ai Enterprise / Teams:
+              </p>
+              <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground">
+                <li><strong>URL:</strong> <code>{mcpServerUrl}/mcp/sse</code></li>
+                <li><strong>Authentication:</strong> Select <strong>No sign-in</strong>.</li>
+                <li><strong>OAuth client:</strong> Ignore this section.</li>
+                <li><strong>Transport (Advanced):</strong> Select <strong>SSE (legacy)</strong>.</li>
+                <li>When prompted during chat, enter your <code>smr_...</code> API key.</li>
+              </ul>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
