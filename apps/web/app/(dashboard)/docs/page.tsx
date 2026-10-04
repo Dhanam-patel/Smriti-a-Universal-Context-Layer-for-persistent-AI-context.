@@ -51,11 +51,9 @@ export default function DocsPage() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="antigravity" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 mb-4">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
               <TabsTrigger value="antigravity">AntiGravity IDE</TabsTrigger>
-              <TabsTrigger value="claude">Claude Desktop</TabsTrigger>
               <TabsTrigger value="cursor">Cursor IDE</TabsTrigger>
-              <TabsTrigger value="claude-web">Claude.ai (Web)</TabsTrigger>
             </TabsList>
             
             <TabsContent value="antigravity" className="space-y-4">
@@ -74,22 +72,6 @@ export default function DocsPage() {
               </div>
             </TabsContent>
             
-            <TabsContent value="claude" className="space-y-4">
-              <p className="text-sm text-muted-foreground">Add this to your <code>claude_desktop_config.json</code> file and restart the app.</p>
-              <div className="relative">
-                <pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto">
-                  <code>{mcpRemoteConfigCode}</code>
-                </pre>
-                <Button
-                  variant="outline" size="icon"
-                  className="absolute top-2 right-2 h-8 w-8"
-                  onClick={() => copyToClipboard(mcpRemoteConfigCode)}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </TabsContent>
-
             <TabsContent value="cursor" className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 In Cursor, go to <strong>Settings &gt; Features &gt; MCP</strong> and add a new server.
@@ -109,18 +91,6 @@ export default function DocsPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="claude-web" className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                When adding a Custom Connector in Claude.ai Enterprise / Teams:
-              </p>
-              <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground">
-                <li><strong>URL:</strong> <code>{mcpServerUrl}/mcp/sse</code></li>
-                <li><strong>Authentication:</strong> Select <strong>No sign-in</strong>.</li>
-                <li><strong>OAuth client:</strong> Ignore this section.</li>
-                <li><strong>Transport (Advanced):</strong> Select <strong>SSE (legacy)</strong>.</li>
-                <li>When prompted during chat, enter your <code>smr_...</code> API key.</li>
-              </ul>
-            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
@@ -140,7 +110,7 @@ export default function DocsPage() {
             /UCL/&lt;chat-name&gt;
           </div>
           <p>
-            <strong>Example:</strong> "Please summarize our previous discussion /UCL/project-alpha"
+            <strong>Example:</strong> &quot;Please summarize our previous discussion /UCL/project-alpha&quot;
           </p>
           <p>
             The AI agent will extract the chat name (e.g., <code>project-alpha</code>) and pass it to the MCP tools to access the exact isolated vector namespace associated with that chat.
