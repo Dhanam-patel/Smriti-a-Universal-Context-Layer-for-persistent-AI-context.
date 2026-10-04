@@ -110,7 +110,7 @@ export default function DocsPage() {
             /UCL/&lt;chat-name&gt;
           </div>
           <p>
-            <strong>Example:</strong> "Please summarize our previous discussion /UCL/project-alpha"
+            <strong>Example:</strong> &quot;Please summarize our previous discussion /UCL/project-alpha&quot;
           </p>
           <p>
             The AI agent will extract the chat name (e.g., <code>project-alpha</code>) and pass it to the MCP tools to access the exact isolated vector namespace associated with that chat.
