@@ -1,3 +1,4 @@
+import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -93,6 +94,17 @@ def test_write_context_upserts_into_chat_namespace(supabase, pinecone):
     upsert_kwargs = pinecone.index.return_value.upsert.call_args.kwargs
     assert upsert_kwargs["namespace"] == "ns"
     assert upsert_kwargs["vectors"][0]["metadata"]["content"] == "text"
+
+
+def test_write_context_timestamps_are_timezone_aware_utc(supabase, pinecone):
+    tools.write_context(USER, {"chat": "c", "content": "text"})
+
+    metadata = pinecone.index.return_value.upsert.call_args.kwargs["vectors"][0][
+        "metadata"
+    ]
+    created_at = datetime.datetime.fromisoformat(metadata["created_at"])
+    assert created_at.utcoffset() == datetime.timedelta(0)
+    assert metadata["updated_at"] == metadata["created_at"]
 
 
 @pytest.mark.parametrize(
