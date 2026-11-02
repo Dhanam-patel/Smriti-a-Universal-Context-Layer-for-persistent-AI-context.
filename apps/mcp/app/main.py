@@ -2,11 +2,15 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import mcp.types as types
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from mcp.server import Server, ServerRequestContext
-from mcp.server.sse import SseServerTransport
+from mcp.server.auth.middleware.bearer_auth import (
+    AuthenticatedUser as MCPAuthenticatedUser,
+)
+from mcp.server.auth.provider import AccessToken
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 from .auth import AuthenticatedUser, authenticate_mcp_client
 from .config import settings, validate_settings
@@ -17,7 +21,8 @@ from .tools import TOOL_DEFINITIONS, TOOL_HANDLERS, ToolError
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_settings(settings)
-    yield
+    async with streamable_http.run():
+        yield
 
 
 app = FastAPI(title="UCL MCP Server", lifespan=lifespan)
@@ -27,7 +32,7 @@ app.add_middleware(
     allow_origins=settings.cors_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Mcp-Session-Id", "WWW-Authenticate"],
+    expose_headers=["Mcp-Session-Id", "Last-Event-ID", "WWW-Authenticate"],
 )
 
 
@@ -72,26 +77,26 @@ server = Server(
     on_call_tool=handle_call_tool,
 )
 
-sse = SseServerTransport("/mcp/messages")
-
-
-class _TransportUser:
-    """Placeholder that SseServerTransport expects to find at scope["user"].
-
-    Real authentication is done by authenticate_request; this only marks the
-    scope as authenticated for the transport.
-    """
+streamable_http = StreamableHTTPSessionManager(server, json_response=True)
 
 
 async def authenticate_request(request: Request) -> AuthenticatedUser:
     """Authenticates the request, and records the user where tool handlers look for it.
 
-    Raises HTTPException on failure. Used by both MCP endpoints so they behave identically.
+    Raises HTTPException on failure.
     """
     # authenticate_mcp_client does blocking Supabase I/O.
     user = await asyncio.to_thread(authenticate_mcp_client, request)
     request.state.user_info = user
-    request.scope["user"] = _TransportUser()
+    request.scope["user"] = MCPAuthenticatedUser(
+        AccessToken(
+            token="validated",
+            client_id=user.client_id or "mcp-client",
+            scopes=[],
+            subject=user.user_id,
+            claims={"iss": settings.oauth_issuer_url},
+        )
+    )
     return user
 
 
@@ -101,24 +106,31 @@ def health_check():
 
 
 @app.get("/.well-known/oauth-protected-resource")
-def oauth_protected_resource_metadata():
+@app.get("/.well-known/oauth-protected-resource/{resource_path:path}")
+def oauth_protected_resource_metadata(resource_path: str = ""):
     """Publish RFC 9728 metadata so MCP clients can start OAuth discovery."""
+    configured_path = settings.mcp_resource_url.split("://", 1)[-1].partition("/")[2].strip("/")
+    if resource_path and resource_path.strip("/") != configured_path:
+        raise HTTPException(status_code=404, detail="Protected resource metadata not found")
     return JSONResponse(protected_resource_metadata())
 
 
-@app.get("/mcp/sse", dependencies=[Depends(authenticate_request)])
-async def mcp_sse(request: Request):
-    async with sse.connect_sse(
-        request.scope, request.receive, request._send
-    ) as streams:
-        await server.run(streams[0], streams[1], server.create_initialization_options())
+class MCPStreamableHTTPASGI:
+    """Authenticate every Streamable HTTP request before MCP dispatch."""
 
+    def __init__(self, transport: StreamableHTTPSessionManager | None = None):
+        self._transport = transport
 
-class MCPMessagesASGI:
-    def __init__(self, sse_transport: SseServerTransport):
-        self.sse = sse_transport
+    @property
+    def transport(self) -> StreamableHTTPSessionManager:
+        return self._transport or streamable_http
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["method"] == "OPTIONS":
+            response = Response(status_code=204)
+            await response(scope, receive, send)
+            return
+
         request = Request(scope, receive, send)
         try:
             await authenticate_request(request)
@@ -131,7 +143,7 @@ class MCPMessagesASGI:
             await response(scope, receive, send)
             return
 
-        await self.sse.handle_post_message(scope, receive, send)
+        await self.transport.handle_request(scope, receive, send)
 
 
-app.add_route("/mcp/messages", MCPMessagesASGI(sse), methods=["POST", "OPTIONS"])
+app.add_route("/mcp", MCPStreamableHTTPASGI(), methods=["GET", "POST", "DELETE", "OPTIONS"])

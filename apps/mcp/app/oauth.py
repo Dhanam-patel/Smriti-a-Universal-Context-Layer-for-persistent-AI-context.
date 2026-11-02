@@ -35,7 +35,12 @@ def _normalise_url(value: str) -> str:
 
 
 def _metadata_url(resource_url: str) -> str:
-    return f"{_normalise_url(resource_url)}/.well-known/oauth-protected-resource"
+    resource = urlsplit(_normalise_url(resource_url))
+    origin = urlunsplit((resource.scheme, resource.netloc, "", "", ""))
+    metadata_path = "/.well-known/oauth-protected-resource"
+    if resource.path:
+        metadata_path = f"{metadata_path}/{resource.path.lstrip('/')}"
+    return f"{origin}{metadata_path}"
 
 
 def protected_resource_metadata(current: Settings = settings) -> dict[str, object]:

@@ -35,7 +35,9 @@ def test_oauth_subject_resolves_to_the_matching_smriti_user():
     ):
         user = auth.authenticate_mcp_client(_request("Bearer access-token"))
 
-    assert user == AuthenticatedUser("u1", PineconeConnection("idx", "pc-key", None))
+    assert user == AuthenticatedUser(
+        "u1", PineconeConnection("idx", "pc-key", None), client_id="oauth-client"
+    )
     query.eq.assert_called_once_with("user_id", "u1")
 
 

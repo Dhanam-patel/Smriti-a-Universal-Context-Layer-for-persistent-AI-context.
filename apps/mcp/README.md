@@ -7,7 +7,7 @@ It allows authenticated AI clients to read and write context to a user's Pinecon
 
 - Python 3.12+
 - FastAPI
-- MCP Python SDK (SSE transport)
+- MCP Python SDK (Streamable HTTP transport)
 - OAuth 2.1 resource-server authentication with Supabase JWT/JWKS validation
 - Pinecone Python SDK
 
@@ -32,8 +32,8 @@ It allows authenticated AI clients to read and write context to a user's Pinecon
    ```
    SUPABASE_URL=...
    SUPABASE_SERVICE_ROLE_KEY=...
-   # Canonical public server origin; this is the OAuth resource/audience.
-   MCP_RESOURCE_URL=https://mcp.example.com
+   # Canonical public server endpoint URL; this is the OAuth resource/audience.
+   MCP_RESOURCE_URL=https://mcp.example.com/mcp
    # Your Supabase project's OAuth issuer and public signing-key set.
    OAUTH_ISSUER_URL=https://<project-ref>.supabase.co/auth/v1
    OAUTH_JWKS_URL=https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
@@ -47,7 +47,7 @@ It allows authenticated AI clients to read and write context to a user's Pinecon
 
 ## Layout
 
-- `app/main.py`: FastAPI app and MCP SSE transport wiring
+- `app/main.py`: FastAPI app and MCP Streamable HTTP transport wiring
 - `app/tools.py`: tool definitions and handlers (`read_context`, `write_context`)
 - `app/auth.py`: Bearer-token authentication, returns a typed `AuthenticatedUser`
 - `app/oauth.py`: OAuth 2.1 resource-server validation and RFC 9728 metadata

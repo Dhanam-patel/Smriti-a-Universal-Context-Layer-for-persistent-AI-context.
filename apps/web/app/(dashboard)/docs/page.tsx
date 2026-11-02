@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 export default function DocsPage() {
   const mcpServerUrl = process.env.NEXT_PUBLIC_MCP_SERVER_URL || 'https://smriti-ucl-mcp.vercel.app';
-  const endpoint = `${mcpServerUrl}/mcp/sse`;
+  const endpoint = `${mcpServerUrl}/mcp`;
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success('Copied to clipboard');
@@ -24,10 +24,10 @@ export default function DocsPage() {
       <Card>
         <CardHeader>
           <CardTitle>1. Connect with OAuth</CardTitle>
-          <CardDescription>Use an MCP client that supports OAuth authorization; no API key or Authorization header is required in its configuration.</CardDescription>
+          <CardDescription>Use an MCP client that supports OAuth authorization and Streamable HTTP; no API key or Authorization header is required in its configuration.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-sm text-muted-foreground">
-          <p>Add this SSE endpoint as a remote MCP server. On first connection, your client discovers Smriti&apos;s OAuth 2.1 metadata and opens the sign-in and consent flow.</p>
+          <p>Add this Streamable HTTP endpoint as a remote MCP server. On first connection, your client discovers Smriti&apos;s OAuth 2.1 metadata and opens the sign-in and consent flow.</p>
           <div className="relative"><pre className="bg-muted p-4 rounded-md text-sm overflow-x-auto"><code>{endpoint}</code></pre><Button variant="outline" size="icon" className="absolute top-2 right-2 h-8 w-8" onClick={() => copyToClipboard(endpoint)} aria-label="Copy MCP endpoint"><Copy className="h-4 w-4" /></Button></div>
           <p>Choose the same identity that owns your Smriti contexts. Tokens are short-lived and are managed by the MCP client.</p>
         </CardContent>

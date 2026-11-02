@@ -19,7 +19,7 @@ def _settings() -> Settings:
         _env_file=None,
         supabase_url="https://project.supabase.co",
         supabase_service_role_key="x" * 40,
-        mcp_resource_url="https://mcp.example.com",
+        mcp_resource_url="https://mcp.example.com/mcp",
         oauth_issuer_url="https://project.supabase.co/auth/v1",
         oauth_jwks_url="https://project.supabase.co/auth/v1/.well-known/jwks.json",
     )
@@ -28,14 +28,14 @@ def _settings() -> Settings:
 def _request(header: str | None = None) -> Request:
     headers = [] if header is None else [(b"authorization", header.encode())]
     return Request(
-        {"type": "http", "method": "GET", "path": "/mcp/sse", "headers": headers}
+        {"type": "http", "method": "GET", "path": "/mcp", "headers": headers}
     )
 
 
 def _claims(**overrides):
     return {
         "iss": "https://project.supabase.co/auth/v1",
-        "aud": "https://mcp.example.com",
+        "aud": "https://mcp.example.com/mcp",
         "sub": "supabase-user-id",
         "client_id": "mcp-client-id",
         "iat": 1,
@@ -46,7 +46,7 @@ def _claims(**overrides):
 
 def test_protected_resource_metadata_advertises_supabase_auth_server():
     assert protected_resource_metadata(_settings()) == {
-        "resource": "https://mcp.example.com",
+        "resource": "https://mcp.example.com/mcp",
         "authorization_servers": ["https://project.supabase.co/auth/v1"],
         "bearer_methods_supported": ["header"],
     }
@@ -58,7 +58,7 @@ def test_missing_bearer_token_returns_discovery_challenge():
 
     assert exc.value.status_code == 401
     assert 'realm="mcp"' in exc.value.headers["WWW-Authenticate"]
-    assert "resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource\"" in exc.value.headers["WWW-Authenticate"]
+    assert "resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\"" in exc.value.headers["WWW-Authenticate"]
 
 
 def test_valid_jwt_claims_are_accepted_with_expected_issuer_and_audience():
@@ -72,8 +72,8 @@ def test_valid_jwt_claims_are_accepted_with_expected_issuer_and_audience():
     assert access_token.subject == "supabase-user-id"
     assert access_token.client_id == "mcp-client-id"
     assert decode.call_args.kwargs["audience"] == [
-        "https://mcp.example.com",
-        "https://mcp.example.com/",
+        "https://mcp.example.com/mcp",
+        "https://mcp.example.com/mcp/",
     ]
     assert decode.call_args.kwargs["issuer"] == "https://project.supabase.co/auth/v1"
 

@@ -19,6 +19,7 @@ class PineconeConnection:
 class AuthenticatedUser:
     user_id: str
     pinecone: PineconeConnection
+    client_id: str | None = None
 
 
 def authenticate_mcp_client(request: Request) -> AuthenticatedUser:
@@ -54,4 +55,5 @@ def authenticate_mcp_client(request: Request) -> AuthenticatedUser:
             api_key=pc_row["encrypted_api_key"],
             embedding_model=pc_row.get("embedding_model"),
         ),
+        client_id=access_token.client_id,
     )

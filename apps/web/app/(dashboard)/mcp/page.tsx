@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 export default function MCPPage() {
   const mcpServerUrl = process.env.NEXT_PUBLIC_MCP_SERVER_URL || 'https://smriti-ucl-mcp.vercel.app';
-  const endpoint = `${mcpServerUrl}/mcp/sse`;
+  const endpoint = `${mcpServerUrl}/mcp`;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
