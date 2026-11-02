@@ -98,6 +98,10 @@ class _PreparedCall:
 def _prepare(
     user: AuthenticatedUser, args: ToolArguments, text_field: str, input_type: str
 ) -> _PreparedCall:
+    if user.pinecone is None:
+        raise ToolError(
+            "PINECONE_NOT_CONNECTED: Pinecone connection is not configured for this user. Please connect Pinecone in the Smriti dashboard."
+        )
     chat_slug = _require_str(args, "chat")
     text = _require_str(args, text_field)
     namespace = _resolve_namespace(user, chat_slug)

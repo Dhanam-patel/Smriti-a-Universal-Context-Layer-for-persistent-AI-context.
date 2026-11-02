@@ -18,7 +18,7 @@ class PineconeConnection:
 @dataclass(frozen=True)
 class AuthenticatedUser:
     user_id: str
-    pinecone: PineconeConnection
+    pinecone: PineconeConnection | None = None
     client_id: str | None = None
 
 

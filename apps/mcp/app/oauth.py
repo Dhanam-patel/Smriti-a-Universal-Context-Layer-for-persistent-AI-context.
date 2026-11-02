@@ -43,30 +43,61 @@ def _metadata_url(resource_url: str) -> str:
     return f"{origin}{metadata_path}"
 
 
-def protected_resource_metadata(current: Settings = settings) -> dict[str, object]:
+def _get_origin_from_request(request: Request | None) -> str | None:
+    if not request:
+        return None
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme or "https").split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", ""))
+    if host:
+        return f"{proto}://{host}".rstrip("/")
+    return None
+
+
+def protected_resource_metadata(
+    current: Settings = settings, request: Request | None = None, resource_path: str = ""
+) -> dict[str, object]:
     """Return RFC 9728 metadata that directs MCP clients to Supabase Auth."""
+    origin = _get_origin_from_request(request)
+    if origin:
+        path = f"/{resource_path.strip('/')}" if resource_path.strip("/") else ""
+        if not path and urlsplit(_normalise_url(current.mcp_resource_url)).path:
+            path = urlsplit(_normalise_url(current.mcp_resource_url)).path
+        resource = _normalise_url(f"{origin}{path}")
+    else:
+        resource = _normalise_url(current.mcp_resource_url)
+
     return {
-        "resource": _normalise_url(current.mcp_resource_url),
+        "resource": resource,
         "authorization_servers": [_normalise_url(current.oauth_issuer_url)],
         "bearer_methods_supported": ["header"],
     }
 
 
-def bearer_challenge(current: Settings = settings, *, error: str | None = None) -> str:
+def bearer_challenge(
+    current: Settings = settings, request: Request | None = None, *, error: str | None = None
+) -> str:
+    origin = _get_origin_from_request(request)
+    if origin:
+        metadata_url = f"{origin}/.well-known/oauth-protected-resource/mcp"
+    else:
+        metadata_url = _metadata_url(current.mcp_resource_url)
+
     values = [
         'Bearer realm="mcp"',
-        f'resource_metadata="{_metadata_url(current.mcp_resource_url)}"',
+        f'resource_metadata="{metadata_url}"',
     ]
     if error:
         values.append(f'error="{error}"')
     return ", ".join(values)
 
 
-def _unauthorized(current: Settings, *, error: str = "invalid_token") -> HTTPException:
+def _unauthorized(
+    current: Settings, request: Request | None = None, *, error: str = "invalid_token"
+) -> HTTPException:
     return HTTPException(
         status_code=401,
         detail="OAuth access token is missing, invalid, expired, or not valid for this MCP server",
-        headers={"WWW-Authenticate": bearer_challenge(current, error=error)},
+        headers={"WWW-Authenticate": bearer_challenge(current, request=request, error=error)},
     )
 
 
@@ -127,28 +158,58 @@ def _signing_key(token: str, current: Settings) -> Any:
     return key.key
 
 
-def verify_access_token(token: str, current: Settings = settings) -> OAuthAccessToken:
+def _valid_audiences(
+    current: Settings = settings, request: Request | None = None
+) -> list[str]:
+    audiences: set[str] = {
+        "authenticated",
+    }
+    candidates = [current.mcp_resource_url, "https://smriti-ucl-mcp.vercel.app"]
+    origin = _get_origin_from_request(request)
+    if origin:
+        candidates.append(origin)
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        norm = _normalise_url(candidate)
+        audiences.add(norm)
+        audiences.add(f"{norm}/")
+        if norm.endswith("/mcp"):
+            base = norm[:-4]
+            audiences.add(base)
+            audiences.add(f"{base}/")
+        else:
+            with_mcp = f"{norm}/mcp"
+            audiences.add(with_mcp)
+            audiences.add(f"{with_mcp}/")
+
+    return list(audiences)
+
+
+def verify_access_token(
+    token: str, current: Settings = settings, request: Request | None = None
+) -> OAuthAccessToken:
     """Verify a Supabase OAuth JWT's signature, issuer, audience, and identity."""
     try:
         claims = jwt.decode(
             token,
             _signing_key(token, current),
             algorithms=list(_ALLOWED_SIGNING_ALGORITHMS),
-            audience=[
-                _normalise_url(current.mcp_resource_url),
-                f"{_normalise_url(current.mcp_resource_url)}/",
-            ],
+            audience=_valid_audiences(current, request),
             issuer=_normalise_url(current.oauth_issuer_url),
-            options={"require": ["exp", "iat", "iss", "aud", "sub", "client_id"]},
+            options={"require": ["exp", "iat", "iss", "aud", "sub"]},
         )
     except jwt.PyJWTError:
-        raise _unauthorized(current) from None
+        raise _unauthorized(current, request=request) from None
     if not isinstance(claims, Mapping):
-        raise _unauthorized(current)
+        raise _unauthorized(current, request=request)
     subject = claims.get("sub")
     client_id = claims.get("client_id")
+    if client_id is None:
+        client_id = claims.get("cid")
     if not isinstance(subject, str) or not subject or not isinstance(client_id, str) or not client_id:
-        raise _unauthorized(current)
+        raise _unauthorized(current, request=request)
     return OAuthAccessToken(subject=subject, client_id=client_id)
 
 
@@ -158,5 +219,5 @@ def authenticate_oauth_request(
     """Extract and verify a bearer access token; called off the event loop."""
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token:
-        raise _unauthorized(current, error="invalid_request")
-    return verify_access_token(token, current)
+        raise _unauthorized(current, request=request, error="invalid_request")
+    return verify_access_token(token, current, request=request)

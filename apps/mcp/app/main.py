@@ -107,12 +107,16 @@ def health_check():
 
 @app.get("/.well-known/oauth-protected-resource")
 @app.get("/.well-known/oauth-protected-resource/{resource_path:path}")
-def oauth_protected_resource_metadata(resource_path: str = ""):
+def oauth_protected_resource_metadata(request: Request, resource_path: str = ""):
     """Publish RFC 9728 metadata so MCP clients can start OAuth discovery."""
     configured_path = settings.mcp_resource_url.split("://", 1)[-1].partition("/")[2].strip("/")
-    if resource_path and resource_path.strip("/") != configured_path:
+    if resource_path and configured_path and resource_path.strip("/") != configured_path:
         raise HTTPException(status_code=404, detail="Protected resource metadata not found")
-    return JSONResponse(protected_resource_metadata())
+    return JSONResponse(
+        protected_resource_metadata(
+            settings, request=request, resource_path=resource_path
+        )
+    )
 
 
 class MCPStreamableHTTPASGI:
@@ -146,4 +150,6 @@ class MCPStreamableHTTPASGI:
         await self.transport.handle_request(scope, receive, send)
 
 
-app.add_route("/mcp", MCPStreamableHTTPASGI(), methods=["GET", "POST", "DELETE", "OPTIONS"])
+mcp_asgi = MCPStreamableHTTPASGI()
+app.add_route("/mcp", mcp_asgi, methods=["GET", "POST", "DELETE", "OPTIONS"])
+app.add_route("/mcp/", mcp_asgi, methods=["GET", "POST", "DELETE", "OPTIONS"])

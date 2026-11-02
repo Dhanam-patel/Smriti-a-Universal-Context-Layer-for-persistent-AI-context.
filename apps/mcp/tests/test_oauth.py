@@ -71,10 +71,10 @@ def test_valid_jwt_claims_are_accepted_with_expected_issuer_and_audience():
 
     assert access_token.subject == "supabase-user-id"
     assert access_token.client_id == "mcp-client-id"
-    assert decode.call_args.kwargs["audience"] == [
-        "https://mcp.example.com/mcp",
-        "https://mcp.example.com/mcp/",
-    ]
+    expected_audiences = decode.call_args.kwargs["audience"]
+    assert "https://mcp.example.com/mcp" in expected_audiences
+    assert "https://mcp.example.com/mcp/" in expected_audiences
+    assert "authenticated" in expected_audiences
     assert decode.call_args.kwargs["issuer"] == "https://project.supabase.co/auth/v1"
 
 
