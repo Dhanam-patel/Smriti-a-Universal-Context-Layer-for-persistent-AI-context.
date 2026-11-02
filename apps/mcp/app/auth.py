@@ -3,14 +3,17 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
 
-from .db import supabase
+from .db import get_supabase
 
 BEARER_PREFIX = "Bearer "
+STATUS_ACTIVE = "active"
 
 
 @dataclass(frozen=True)
 class PineconeConnection:
     index_name: str
+    # The `encrypted_api_key` column currently stores the key as plaintext (the web app
+    # writes it that way), so no decryption happens here.
     api_key: str
     embedding_model: str | None
 
@@ -42,6 +45,7 @@ def authenticate_mcp_client(request: Request) -> AuthenticatedUser:
     """
     token = _extract_bearer_token(request)
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    supabase = get_supabase()
 
     mcp_resp = (
         supabase.table("mcp_connections")
@@ -53,7 +57,7 @@ def authenticate_mcp_client(request: Request) -> AuthenticatedUser:
         raise HTTPException(status_code=401, detail="Invalid MCP credential")
 
     mcp_conn = mcp_resp.data[0]
-    if mcp_conn.get("status") != "active":
+    if mcp_conn.get("status") != STATUS_ACTIVE:
         raise HTTPException(status_code=403, detail="MCP connection is not active")
 
     user_id = mcp_conn["user_id"]

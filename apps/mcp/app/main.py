@@ -8,21 +8,24 @@ from mcp.server import Server, ServerRequestContext
 from mcp.server.sse import SseServerTransport
 
 from .auth import AuthenticatedUser, authenticate_mcp_client
+from .config import settings
 from .tools import TOOL_DEFINITIONS, TOOL_HANDLERS, ToolError
 
 app = FastAPI(title="UCL MCP Server")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.cors_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-def _text_result(text: str) -> types.CallToolResult:
-    return types.CallToolResult(content=[types.TextContent(type="text", text=text)])
+def _text_result(text: str, *, is_error: bool = False) -> types.CallToolResult:
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=text)],
+        is_error=is_error,
+    )
 
 
 async def handle_list_tools(
@@ -34,20 +37,22 @@ async def handle_list_tools(
 async def handle_call_tool(
     ctx: ServerRequestContext, req: types.CallToolRequestParams
 ) -> types.CallToolResult | types.InputRequiredResult:
-    # The POST /mcp/messages handler stores the authenticated user on request.state.
+    # Both MCP endpoints store the authenticated user on request.state (see authenticate_request).
     user: AuthenticatedUser | None = getattr(ctx.request.state, "user_info", None)
     if user is None:
-        return _text_result("Error: Could not retrieve authentication state")
+        return _text_result(
+            "Error: Could not retrieve authentication state", is_error=True
+        )
 
     handler = TOOL_HANDLERS.get(req.name)
     if handler is None:
-        return _text_result(f"Unknown tool: {req.name}")
+        return _text_result(f"Unknown tool: {req.name}", is_error=True)
 
     try:
         # Handlers use blocking Supabase/Pinecone clients, so keep them off the event loop.
         text = await asyncio.to_thread(handler, user, req.arguments or {})
     except ToolError as exc:
-        return _text_result(str(exc))
+        return _text_result(str(exc), is_error=True)
     return _text_result(text)
 
 
@@ -63,9 +68,21 @@ sse = SseServerTransport("/mcp/messages")
 class _TransportUser:
     """Placeholder that SseServerTransport expects to find at scope["user"].
 
-    Real authentication is done by authenticate_mcp_client; this only marks the
+    Real authentication is done by authenticate_request; this only marks the
     scope as authenticated for the transport.
     """
+
+
+async def authenticate_request(request: Request) -> AuthenticatedUser:
+    """Authenticates the request, and records the user where tool handlers look for it.
+
+    Raises HTTPException on failure. Used by both MCP endpoints so they behave identically.
+    """
+    # authenticate_mcp_client does blocking Supabase I/O.
+    user = await asyncio.to_thread(authenticate_mcp_client, request)
+    request.state.user_info = user
+    request.scope["user"] = _TransportUser()
+    return user
 
 
 @app.get("/health")
@@ -73,10 +90,8 @@ def health_check():
     return {"status": "ok"}
 
 
-@app.get("/mcp/sse", dependencies=[Depends(authenticate_mcp_client)])
+@app.get("/mcp/sse", dependencies=[Depends(authenticate_request)])
 async def mcp_sse(request: Request):
-    request.scope["user"] = _TransportUser()
-
     async with sse.connect_sse(
         request.scope, request.receive, request._send
     ) as streams:
@@ -90,14 +105,11 @@ class MCPMessagesASGI:
     async def __call__(self, scope, receive, send):
         request = Request(scope, receive, send)
         try:
-            user = await asyncio.to_thread(authenticate_mcp_client, request)
+            await authenticate_request(request)
         except HTTPException as exc:
             response = Response(content=exc.detail, status_code=exc.status_code)
             await response(scope, receive, send)
             return
-
-        request.state.user_info = user
-        scope["user"] = _TransportUser()
 
         await self.sse.handle_post_message(scope, receive, send)
 
