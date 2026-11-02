@@ -3,6 +3,5 @@ uvicorn
 mcp
 pinecone
 supabase
-python-dotenv
-pydantic
 pydantic-settings
+httpx
