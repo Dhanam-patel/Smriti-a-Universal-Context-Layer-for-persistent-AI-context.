@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 
 import mcp.types as types
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -8,10 +9,17 @@ from mcp.server import Server, ServerRequestContext
 from mcp.server.sse import SseServerTransport
 
 from .auth import AuthenticatedUser, authenticate_mcp_client
-from .config import settings
+from .config import settings, validate_settings
 from .tools import TOOL_DEFINITIONS, TOOL_HANDLERS, ToolError
 
-app = FastAPI(title="UCL MCP Server")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    validate_settings(settings)
+    yield
+
+
+app = FastAPI(title="UCL MCP Server", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
