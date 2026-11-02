@@ -107,19 +107,44 @@ export async function POST(
     let searchResults;
     try {
       const index = pc.index(pcConn.index_name);
+      const ns = index.namespace(chat.pinecone_namespace);
       
-      const queryResponse = await index.namespace(chat.pinecone_namespace).query({
-        vector: embedding,
-        topK: 5,
-        includeMetadata: true,
-      });
+      try {
+        const queryResponse = await ns.query({
+          vector: embedding,
+          topK: 5,
+          includeMetadata: true,
+        });
 
-      searchResults = queryResponse.matches.map(match => ({
-        id: match.id,
-        score: match.score,
-        content: match.metadata?.content || '',
-        metadata: match.metadata,
-      }));
+        searchResults = queryResponse.matches.map(match => ({
+          id: match.id,
+          score: match.score,
+          content: match.metadata?.content || '',
+          metadata: match.metadata,
+        }));
+      } catch (searchErr: any) {
+        const errMsg = String(searchErr?.message || searchErr).toLowerCase();
+        if (
+          (errMsg.includes('document schema') ||
+           errMsg.includes('documents/search') ||
+           errMsg.includes('documents api')) &&
+          (ns as any).documents
+        ) {
+          const docResp = await (ns as any).documents.search({
+            scoreBy: [{ type: 'dense_vector', field: 'embedding', values: embedding }],
+            topK: 5,
+            includeFields: ['*'],
+          });
+          searchResults = (docResp.matches || []).map((match: any) => ({
+            id: match._id || match.id,
+            score: match._score ?? match.score ?? 0,
+            content: match.content || match.text || match.metadata?.content || '',
+            metadata: match,
+          }));
+        } else {
+          throw searchErr;
+        }
+      }
     } catch (e: any) {
       console.error('Pinecone Search Error:', e);
       return NextResponse.json({ error: { message: `Failed to search Pinecone: ${e?.message || e}` } }, { status: 500 });

@@ -93,6 +93,120 @@ class _PreparedCall:
     namespace: str
     index: Any
     embedding: list[float]
+    pc: Pinecone
+
+
+_index_schema_cache: dict[str, Any] = {}
+
+
+def _get_index_schema(pc: Any, index_name: str) -> Any | None:
+    if index_name in _index_schema_cache:
+        return _index_schema_cache[index_name]
+    try:
+        desc_fn = getattr(pc, "describe_index", None)
+        if callable(desc_fn):
+            desc = desc_fn(index_name)
+        elif hasattr(pc, "indexes") and hasattr(pc.indexes, "describe"):
+            desc = pc.indexes.describe(index_name)
+        else:
+            desc = None
+        schema = getattr(desc, "schema", None)
+        if schema is not None and not str(type(schema)).endswith("MagicMock'>"):
+            _index_schema_cache[index_name] = schema
+            return schema
+    except Exception:
+        pass
+    return None
+
+
+def _get_schema_fields(schema: Any | None) -> dict[str, Any]:
+    if not schema:
+        return {}
+    if isinstance(schema, dict):
+        fields = schema.get("fields")
+        return fields if isinstance(fields, dict) else {}
+    fields = getattr(schema, "fields", None)
+    return fields if isinstance(fields, dict) else {}
+
+
+def _extract_document_content(doc: Any) -> str:
+    if hasattr(doc, "get"):
+        val = doc.get("content") or doc.get("text") or doc.get("body")
+        if val:
+            return str(val)
+    if hasattr(doc, "metadata") and isinstance(doc.metadata, dict):
+        val = doc.metadata.get("content") or doc.metadata.get("text")
+        if val:
+            return str(val)
+    fields = getattr(doc, "fields", None)
+    if isinstance(fields, dict):
+        val = fields.get("content") or fields.get("text") or fields.get("body")
+        if val:
+            return str(val)
+    for attr in ("content", "text", "body"):
+        val = getattr(doc, attr, None)
+        if val and not callable(val):
+            return str(val)
+    if hasattr(doc, "id"):
+        return str(doc.id)
+    return str(doc)
+
+
+def _build_document(
+    record_id: str,
+    text: str,
+    embedding: list[float],
+    now: str,
+    schema: Any | None = None,
+) -> dict[str, Any]:
+    doc: dict[str, Any] = {
+        "_id": record_id,
+        "content": text,
+        "text": text,
+        "source": "mcp",
+        "created_at": now,
+        "updated_at": now,
+    }
+    fields = _get_schema_fields(schema)
+    if fields:
+        has_dense = False
+        for field_name, field_def in fields.items():
+            type_name = type(field_def).__name__
+            f_type = getattr(field_def, "type", None) if not isinstance(field_def, dict) else field_def.get("type")
+            if f_type == "dense_vector" or "DenseVector" in type_name:
+                doc[field_name] = embedding
+                has_dense = True
+            elif f_type == "string" or "String" in type_name:
+                if field_name not in doc:
+                    doc[field_name] = text
+        if not has_dense:
+            doc["embedding"] = embedding
+            doc["values"] = embedding
+    else:
+        doc["embedding"] = embedding
+        doc["values"] = embedding
+    return doc
+
+
+def _build_score_by(
+    text: str, embedding: list[float], schema: Any | None = None
+) -> list[dict[str, Any]]:
+    fields = _get_schema_fields(schema)
+    if fields:
+        for field_name, field_def in fields.items():
+            type_name = type(field_def).__name__
+            f_type = getattr(field_def, "type", None) if not isinstance(field_def, dict) else field_def.get("type")
+            if f_type == "dense_vector" or "DenseVector" in type_name:
+                return [{"type": "dense_vector", "field": field_name, "values": embedding}]
+            embed = getattr(field_def, "embed", None) if not isinstance(field_def, dict) else field_def.get("embed")
+            if embed:
+                return [{"type": "embed", "field": field_name, "query": text}]
+        for field_name, field_def in fields.items():
+            type_name = type(field_def).__name__
+            f_type = getattr(field_def, "type", None) if not isinstance(field_def, dict) else field_def.get("type")
+            if f_type == "string" or "String" in type_name:
+                return [{"type": "text", "fields": [field_name], "query": text}]
+    return [{"type": "dense_vector", "field": "embedding", "values": embedding}]
 
 
 def _prepare(
@@ -121,6 +235,7 @@ def _prepare(
         namespace=namespace,
         index=pc.index(user.pinecone.index_name),
         embedding=embedding,
+        pc=pc,
     )
 
 
@@ -128,16 +243,52 @@ def read_context(user: AuthenticatedUser, args: ToolArguments) -> str:
     call = _prepare(user, args, text_field="query", input_type="query")
 
     with _pinecone_errors("search"):
-        response = call.index.query(
-            namespace=call.namespace,
-            vector=call.embedding,
-            top_k=SEARCH_TOP_K,
-            include_metadata=True,
-        )
-        lines = [
-            f"- {m.metadata.get('content', '')} (Score: {m.score})\n"
-            for m in response.matches
-        ]
+        schema = _get_index_schema(call.pc, user.pinecone.index_name)
+        if schema and _get_schema_fields(schema) and hasattr(call.index, "documents"):
+            score_by = _build_score_by(call.text, call.embedding, schema)
+            response = call.index.documents.search(
+                namespace=call.namespace,
+                top_k=SEARCH_TOP_K,
+                score_by=score_by,
+                include_fields=["*"],
+            )
+            lines = [
+                f"- {_extract_document_content(m)} (Score: {getattr(m, 'score', None)})\n"
+                for m in response.matches
+            ]
+        else:
+            try:
+                response = call.index.query(
+                    namespace=call.namespace,
+                    vector=call.embedding,
+                    top_k=SEARCH_TOP_K,
+                    include_metadata=True,
+                )
+                lines = [
+                    f"- {m.metadata.get('content', '')} (Score: {m.score})\n"
+                    for m in response.matches
+                ]
+            except Exception as exc:
+                err_msg = str(exc).lower()
+                if (
+                    "document schema" in err_msg
+                    or "documents/search" in err_msg
+                    or "documents/upsert" in err_msg
+                    or "documents api" in err_msg
+                ) and hasattr(call.index, "documents"):
+                    score_by = _build_score_by(call.text, call.embedding, schema)
+                    response = call.index.documents.search(
+                        namespace=call.namespace,
+                        top_k=SEARCH_TOP_K,
+                        score_by=score_by,
+                        include_fields=["*"],
+                    )
+                    lines = [
+                        f"- {_extract_document_content(m)} (Score: {getattr(m, 'score', None)})\n"
+                        for m in response.matches
+                    ]
+                else:
+                    raise
 
     return "Context Search Results:\n\n" + "".join(lines)
 
@@ -147,21 +298,48 @@ def write_context(user: AuthenticatedUser, args: ToolArguments) -> str:
 
     with _pinecone_errors("upsert"):
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        call.index.upsert(
-            namespace=call.namespace,
-            vectors=[
-                {
-                    "id": f"ctx_{uuid.uuid4()}",
-                    "values": call.embedding,
-                    "metadata": {
-                        "content": call.text,
-                        "source": "mcp",
-                        "created_at": now,
-                        "updated_at": now,
-                    },
-                }
-            ],
-        )
+        record_id = f"ctx_{uuid.uuid4()}"
+
+        schema = _get_index_schema(call.pc, user.pinecone.index_name)
+        if schema and _get_schema_fields(schema) and hasattr(call.index, "documents"):
+            doc = _build_document(record_id, call.text, call.embedding, now, schema)
+            call.index.documents.upsert(
+                namespace=call.namespace,
+                documents=[doc],
+            )
+        else:
+            try:
+                call.index.upsert(
+                    namespace=call.namespace,
+                    vectors=[
+                        {
+                            "id": record_id,
+                            "values": call.embedding,
+                            "metadata": {
+                                "content": call.text,
+                                "source": "mcp",
+                                "created_at": now,
+                                "updated_at": now,
+                            },
+                        }
+                    ],
+                )
+            except Exception as exc:
+                err_msg = str(exc).lower()
+                if (
+                    "document schema" in err_msg
+                    or "documents/upsert" in err_msg
+                    or "documents api" in err_msg
+                ) and hasattr(call.index, "documents"):
+                    doc = _build_document(
+                        record_id, call.text, call.embedding, now, schema
+                    )
+                    call.index.documents.upsert(
+                        namespace=call.namespace,
+                        documents=[doc],
+                    )
+                else:
+                    raise
 
     return f"Successfully wrote context to chat {call.chat_slug}."
 

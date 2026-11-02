@@ -140,3 +140,84 @@ def test_pinecone_failures_are_reported_as_tool_errors(
 
     with pytest.raises(tools.ToolError, match=message):
         handler(USER, args)
+
+
+def test_write_context_with_document_schema(supabase, pinecone):
+    tools._index_schema_cache.clear()
+    schema = SimpleNamespace(
+        fields={
+            "my_vector": SimpleNamespace(type="dense_vector"),
+            "content": SimpleNamespace(type="string"),
+        }
+    )
+    pinecone.describe_index.return_value = SimpleNamespace(schema=schema)
+    pinecone.index.return_value.documents = MagicMock()
+
+    result = tools.write_context(USER, {"chat": "c", "content": "doc text"})
+    assert result == "Successfully wrote context to chat c."
+    pinecone.index.return_value.documents.upsert.assert_called_once()
+    upsert_call = pinecone.index.return_value.documents.upsert.call_args.kwargs
+    assert upsert_call["namespace"] == "ns"
+    doc = upsert_call["documents"][0]
+    assert doc["content"] == "doc text"
+    assert doc["my_vector"] == [0.1, 0.2]
+
+
+def test_write_context_fallback_on_document_schema_error(supabase, pinecone):
+    tools._index_schema_cache.clear()
+    pinecone.describe_index.return_value = SimpleNamespace(schema=None)
+    pinecone.index.return_value.documents = MagicMock()
+    pinecone.index.return_value.upsert.side_effect = RuntimeError(
+        "That index has a document schema, so it only accepts writes through Pinecone's documents API"
+    )
+
+    result = tools.write_context(USER, {"chat": "c", "content": "fallback text"})
+    assert result == "Successfully wrote context to chat c."
+    pinecone.index.return_value.documents.upsert.assert_called_once()
+    upsert_call = pinecone.index.return_value.documents.upsert.call_args.kwargs
+    assert upsert_call["documents"][0]["content"] == "fallback text"
+
+
+def test_read_context_with_document_schema(supabase, pinecone):
+    tools._index_schema_cache.clear()
+    schema = SimpleNamespace(
+        fields={"embedding": SimpleNamespace(type="dense_vector")}
+    )
+    pinecone.describe_index.return_value = SimpleNamespace(schema=schema)
+    pinecone.index.return_value.documents = MagicMock()
+    pinecone.index.return_value.documents.search.return_value = SimpleNamespace(
+        matches=[
+            SimpleNamespace(
+                score=0.95,
+                get=lambda k, default=None: "doc search result" if k == "content" else default,
+            )
+        ]
+    )
+
+    result = tools.read_context(USER, {"chat": "c", "query": "find something"})
+    assert "doc search result" in result
+    assert "Score: 0.95" in result
+    pinecone.index.return_value.documents.search.assert_called_once()
+
+
+def test_read_context_fallback_on_document_schema_error(supabase, pinecone):
+    tools._index_schema_cache.clear()
+    pinecone.describe_index.return_value = SimpleNamespace(schema=None)
+    pinecone.index.return_value.documents = MagicMock()
+    pinecone.index.return_value.query.side_effect = RuntimeError(
+        "index has a document schema, use documents/search"
+    )
+    pinecone.index.return_value.documents.search.return_value = SimpleNamespace(
+        matches=[
+            SimpleNamespace(
+                score=0.88,
+                get=lambda k, default=None: "fallback search hit" if k == "content" else default,
+            )
+        ]
+    )
+
+    result = tools.read_context(USER, {"chat": "c", "query": "find something"})
+    assert "fallback search hit" in result
+    assert "Score: 0.88" in result
+    pinecone.index.return_value.documents.search.assert_called_once()
+

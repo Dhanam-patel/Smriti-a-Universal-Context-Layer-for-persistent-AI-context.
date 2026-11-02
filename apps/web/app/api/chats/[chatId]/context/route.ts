@@ -108,23 +108,49 @@ export async function POST(
     // 4. Upsert into Pinecone
     try {
       const index = pc.index(pcConn.index_name);
+      const ns = index.namespace(chat.pinecone_namespace);
       
       const recordId = `ctx_${crypto.randomUUID()}`;
       const now = new Date().toISOString();
       
-      // @ts-ignore
-      await index.namespace(chat.pinecone_namespace).upsert({
-        records: [{
-          id: recordId,
-          values: embedding,
-          metadata: {
-            content,
-            source: 'dashboard',
-            created_at: now,
-            updated_at: now,
-          }
-        }]
-      });
+      try {
+        // @ts-ignore
+        await ns.upsert({
+          records: [{
+            id: recordId,
+            values: embedding,
+            metadata: {
+              content,
+              source: 'dashboard',
+              created_at: now,
+              updated_at: now,
+            }
+          }]
+        });
+      } catch (upsertErr: any) {
+        const errMsg = String(upsertErr?.message || upsertErr).toLowerCase();
+        if (
+          (errMsg.includes('document schema') ||
+           errMsg.includes('documents/upsert') ||
+           errMsg.includes('documents api')) &&
+          (ns as any).documents
+        ) {
+          await (ns as any).documents.upsert({
+            documents: [{
+              _id: recordId,
+              content,
+              text: content,
+              source: 'dashboard',
+              created_at: now,
+              updated_at: now,
+              embedding,
+              values: embedding,
+            }]
+          });
+        } else {
+          throw upsertErr;
+        }
+      }
     } catch (e: any) {
       console.error('Pinecone Error:', e);
       return NextResponse.json({ error: { message: `Failed to write to Pinecone: ${e?.message || e}` } }, { status: 500 });
