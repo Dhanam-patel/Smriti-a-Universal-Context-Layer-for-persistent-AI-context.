@@ -10,15 +10,6 @@ export type PineconeConnection = {
   updated_at: string;
 };
 
-export type McpConnection = {
-  id: string;
-  user_id: string;
-  connection_id: string;
-  status: string;
-  created_at: string;
-  last_used_at: string | null;
-};
-
 export type Chat = {
   id: string;
   user_id: string;

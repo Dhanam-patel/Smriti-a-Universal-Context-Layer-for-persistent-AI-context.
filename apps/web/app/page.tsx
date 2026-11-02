@@ -125,13 +125,13 @@ export default async function LandingPage() {
             />
             <Step
               num={4}
-              title="Generate an MCP API Key"
-              description="Generate a single secure API key to authenticate all your AI applications."
+              title="Connect with OAuth"
+              description="Authorize an MCP client through your existing Smriti account."
             />
             <Step
               num={5}
               title="Connect your AI"
-              description="Point any MCP-compatible AI client to your Smriti endpoint. Use /Smriti/chat to select a context."
+              description="Point an OAuth-capable MCP client to your Smriti endpoint. Use /Smriti/chat to select a context."
             />
           </div>
         </div>

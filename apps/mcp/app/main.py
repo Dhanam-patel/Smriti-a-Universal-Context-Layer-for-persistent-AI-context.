@@ -4,12 +4,13 @@ from contextlib import asynccontextmanager
 import mcp.types as types
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from mcp.server import Server, ServerRequestContext
 from mcp.server.sse import SseServerTransport
 
 from .auth import AuthenticatedUser, authenticate_mcp_client
 from .config import settings, validate_settings
+from .oauth import protected_resource_metadata
 from .tools import TOOL_DEFINITIONS, TOOL_HANDLERS, ToolError
 
 
@@ -26,6 +27,7 @@ app.add_middleware(
     allow_origins=settings.cors_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Mcp-Session-Id", "WWW-Authenticate"],
 )
 
 
@@ -98,6 +100,12 @@ def health_check():
     return {"status": "ok"}
 
 
+@app.get("/.well-known/oauth-protected-resource")
+def oauth_protected_resource_metadata():
+    """Publish RFC 9728 metadata so MCP clients can start OAuth discovery."""
+    return JSONResponse(protected_resource_metadata())
+
+
 @app.get("/mcp/sse", dependencies=[Depends(authenticate_request)])
 async def mcp_sse(request: Request):
     async with sse.connect_sse(
@@ -115,7 +123,11 @@ class MCPMessagesASGI:
         try:
             await authenticate_request(request)
         except HTTPException as exc:
-            response = Response(content=exc.detail, status_code=exc.status_code)
+            response = Response(
+                content=exc.detail,
+                status_code=exc.status_code,
+                headers=exc.headers,
+            )
             await response(scope, receive, send)
             return
 

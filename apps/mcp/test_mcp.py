@@ -1,8 +1,8 @@
 """Manual end-to-end smoke test for the MCP server over SSE.
 
 Usage:
-    MCP_API_KEY=smr_... python test_mcp.py                       # http://localhost:8000
-    MCP_API_KEY=smr_... MCP_BASE_URL=https://host python test_mcp.py
+    MCP_ACCESS_TOKEN=... python test_mcp.py                       # http://localhost:8000
+    MCP_ACCESS_TOKEN=... MCP_BASE_URL=https://host python test_mcp.py
 """
 
 import asyncio
@@ -33,11 +33,11 @@ class SmokeTestError(Exception):
 
 
 async def main() -> None:
-    api_key = os.environ.get("MCP_API_KEY")
-    if not api_key:
-        raise SmokeTestError("Set MCP_API_KEY to a valid MCP credential.")
+    access_token = os.environ.get("MCP_ACCESS_TOKEN")
+    if not access_token:
+        raise SmokeTestError("Set MCP_ACCESS_TOKEN to a valid OAuth access token.")
 
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {"Authorization": f"Bearer {access_token}"}
 
     async with httpx.AsyncClient(timeout=30.0) as client:
 

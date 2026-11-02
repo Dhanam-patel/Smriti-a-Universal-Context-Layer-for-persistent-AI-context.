@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
-import type { PineconeConnection, McpConnection, Chat } from '@/types/database';
+import type { PineconeConnection, Chat } from '@/types/database';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Database, FolderOpen, Plug, Activity, CheckCircle2, XCircle, ArrowRight, Link as LinkIcon } from 'lucide-react';
@@ -12,20 +12,17 @@ import { formatDistanceToNow } from 'date-fns';
 export default function DashboardPage() {
   const supabase = createSupabaseBrowserClient();
   const [pinecone, setPinecone] = useState<PineconeConnection | null>(null);
-  const [mcpConnections, setMcpConnections] = useState<McpConnection[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
-      const [pineconeRes, mcpRes, chatsRes] = await Promise.all([
+      const [pineconeRes, chatsRes] = await Promise.all([
         supabase.from('pinecone_connections').select('id, index_name, host, embedding_model, status').maybeSingle(),
-        supabase.from('mcp_connections').select('*'),
         supabase.from('chats').select('*').order('created_at', { ascending: false }),
       ]);
 
       setPinecone(pineconeRes.data as PineconeConnection | null);
-      setMcpConnections(mcpRes.data || []);
       setChats(chatsRes.data || []);
       setLoading(false);
     }
@@ -69,9 +66,9 @@ export default function DashboardPage() {
         />
         <StatusCard
           icon={<Plug className="h-5 w-5" />}
-          label="MCP Identity"
-          value={mcpConnections.length > 0 ? 'Active' : 'Inactive'}
-          connected={mcpConnections.length > 0}
+          label="MCP Access"
+          value="OAuth 2.1"
+          connected
           href="/mcp"
           detail={undefined}
         />
@@ -160,7 +157,7 @@ export default function DashboardPage() {
               />
               <SetupStep
                 done={false}
-                label="Generate an MCP API Key"
+                label="Connect an OAuth-capable MCP client"
                 href="/mcp"
               />
             </div>

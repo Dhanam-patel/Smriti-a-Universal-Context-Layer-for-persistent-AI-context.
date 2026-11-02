@@ -1,12 +1,9 @@
-import hashlib
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
 
 from .db import get_supabase
-
-BEARER_PREFIX = "Bearer "
-STATUS_ACTIVE = "active"
+from .oauth import OAuthAccessToken, authenticate_oauth_request
 
 
 @dataclass(frozen=True)
@@ -24,43 +21,19 @@ class AuthenticatedUser:
     pinecone: PineconeConnection
 
 
-def _extract_bearer_token(request: Request) -> str:
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith(BEARER_PREFIX):
-        raise HTTPException(
-            status_code=401, detail="Missing or invalid authentication token"
-        )
-    return auth_header[len(BEARER_PREFIX) :]
-
-
 def authenticate_mcp_client(request: Request) -> AuthenticatedUser:
     """
     Authenticates the MCP client.
 
-    Hashes the Bearer token (secret credential) and looks it up in the Supabase
-    `mcp_connections` table. Returns the owning user and their Pinecone
-    configuration. Raises HTTPException (401/403/400) on failure.
+    Verifies an OAuth 2.1 access token, then resolves its subject to the
+    corresponding Smriti user and Pinecone configuration. The authorization
+    server must issue the Smriti user id as the token's ``sub`` claim.
 
     This performs blocking network I/O; call it via a worker thread from async code.
     """
-    token = _extract_bearer_token(request)
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    access_token: OAuthAccessToken = authenticate_oauth_request(request)
     supabase = get_supabase()
-
-    mcp_resp = (
-        supabase.table("mcp_connections")
-        .select("user_id, status")
-        .eq("credential_hash", token_hash)
-        .execute()
-    )
-    if not mcp_resp.data:
-        raise HTTPException(status_code=401, detail="Invalid MCP credential")
-
-    mcp_conn = mcp_resp.data[0]
-    if mcp_conn.get("status") != STATUS_ACTIVE:
-        raise HTTPException(status_code=403, detail="MCP connection is not active")
-
-    user_id = mcp_conn["user_id"]
+    user_id = access_token.subject
 
     pc_resp = (
         supabase.table("pinecone_connections")
