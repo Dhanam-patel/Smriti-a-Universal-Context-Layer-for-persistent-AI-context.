@@ -48,6 +48,11 @@ async def main() -> None:
         async with client.stream(
             "GET", f"{BASE_URL}/mcp/sse", headers=headers
         ) as response:
+            if response.status_code != 200:
+                body = (await response.aread()).decode(errors="replace")[:200]
+                raise SmokeTestError(
+                    f"SSE connection failed: HTTP {response.status_code} {body}"
+                )
             post_url: str | None = None
 
             async for line in response.aiter_lines():
