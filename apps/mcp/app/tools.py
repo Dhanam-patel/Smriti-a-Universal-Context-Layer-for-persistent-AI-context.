@@ -110,7 +110,7 @@ def _get_index_schema(pc: Any, index_name: str) -> Any | None:
             desc = pc.indexes.describe(index_name)
         else:
             desc = None
-        schema = getattr(desc, "schema", None)
+        schema = getattr(desc, "schema", None) if not isinstance(desc, dict) else desc.get("schema")
         if schema is not None and not str(type(schema)).endswith("MagicMock'>"):
             _index_schema_cache[index_name] = schema
             return schema
@@ -161,30 +161,46 @@ def _build_document(
 ) -> dict[str, Any]:
     doc: dict[str, Any] = {
         "_id": record_id,
-        "content": text,
-        "text": text,
         "source": "mcp",
         "created_at": now,
         "updated_at": now,
     }
     fields = _get_schema_fields(schema)
+    dense_vector_field: str | None = None
+    text_fields: list[str] = []
+
     if fields:
-        has_dense = False
         for field_name, field_def in fields.items():
             type_name = type(field_def).__name__
             f_type = getattr(field_def, "type", None) if not isinstance(field_def, dict) else field_def.get("type")
             if f_type == "dense_vector" or "DenseVector" in type_name:
-                doc[field_name] = embedding
-                has_dense = True
-            elif f_type == "string" or "String" in type_name:
-                if field_name not in doc:
-                    doc[field_name] = text
-        if not has_dense:
-            doc["embedding"] = embedding
-            doc["values"] = embedding
+                if dense_vector_field is None:
+                    dense_vector_field = field_name
+            elif (
+                f_type in ("string", "semantic_text")
+                or "String" in type_name
+                or "SemanticText" in type_name
+            ):
+                text_fields.append(field_name)
+
+    # Only assign the embedding to the schema's declared dense vector field.
+    # Never attach float arrays to metadata, because Pinecone metadata only allows
+    # booleans, numbers, strings, or arrays of strings.
+    if dense_vector_field:
+        doc[dense_vector_field] = embedding
+
+    # Store text in any declared text fields
+    if text_fields:
+        for f in text_fields:
+            doc[f] = text
     else:
-        doc["embedding"] = embedding
-        doc["values"] = embedding
+        doc["content"] = text
+        doc["text"] = text
+
+    # Ensure content is always available for search/read formatting if not conflicting
+    if "content" not in doc:
+        doc["content"] = text
+
     return doc
 
 
@@ -193,20 +209,29 @@ def _build_score_by(
 ) -> list[dict[str, Any]]:
     fields = _get_schema_fields(schema)
     if fields:
+        # 1. Prefer dense vector query if index has a dense vector field
         for field_name, field_def in fields.items():
             type_name = type(field_def).__name__
             f_type = getattr(field_def, "type", None) if not isinstance(field_def, dict) else field_def.get("type")
             if f_type == "dense_vector" or "DenseVector" in type_name:
                 return [{"type": "dense_vector", "field": field_name, "values": embedding}]
+
+        # 2. Prefer embed query if index has an embedded text field (integrated embedding)
+        for field_name, field_def in fields.items():
+            type_name = type(field_def).__name__
+            f_type = getattr(field_def, "type", None) if not isinstance(field_def, dict) else field_def.get("type")
             embed = getattr(field_def, "embed", None) if not isinstance(field_def, dict) else field_def.get("embed")
-            if embed:
+            if embed or f_type == "semantic_text" or "SemanticText" in type_name:
                 return [{"type": "embed", "field": field_name, "query": text}]
+
+        # 3. Text query for searchable text fields
         for field_name, field_def in fields.items():
             type_name = type(field_def).__name__
             f_type = getattr(field_def, "type", None) if not isinstance(field_def, dict) else field_def.get("type")
             if f_type == "string" or "String" in type_name:
                 return [{"type": "text", "fields": [field_name], "query": text}]
-    return [{"type": "dense_vector", "field": "embedding", "values": embedding}]
+
+    return [{"type": "text", "fields": ["text"], "query": text}]
 
 
 def _prepare(
@@ -229,11 +254,16 @@ def _prepare(
         )
         embedding = response[0].values
 
+    if user.pinecone.host:
+        index = pc.index(host=user.pinecone.host)
+    else:
+        index = pc.index(user.pinecone.index_name)
+
     return _PreparedCall(
         chat_slug=chat_slug,
         text=text,
         namespace=namespace,
-        index=pc.index(user.pinecone.index_name),
+        index=index,
         embedding=embedding,
         pc=pc,
     )
@@ -276,6 +306,8 @@ def read_context(user: AuthenticatedUser, args: ToolArguments) -> str:
                     or "documents/upsert" in err_msg
                     or "documents api" in err_msg
                 ) and hasattr(call.index, "documents"):
+                    if schema is None:
+                        schema = _get_index_schema(call.pc, user.pinecone.index_name)
                     score_by = _build_score_by(call.text, call.embedding, schema)
                     response = call.index.documents.search(
                         namespace=call.namespace,
@@ -331,6 +363,8 @@ def write_context(user: AuthenticatedUser, args: ToolArguments) -> str:
                     or "documents/upsert" in err_msg
                     or "documents api" in err_msg
                 ) and hasattr(call.index, "documents"):
+                    if schema is None:
+                        schema = _get_index_schema(call.pc, user.pinecone.index_name)
                     doc = _build_document(
                         record_id, call.text, call.embedding, now, schema
                     )

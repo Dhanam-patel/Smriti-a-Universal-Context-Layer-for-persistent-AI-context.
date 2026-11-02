@@ -135,17 +135,56 @@ export async function POST(
            errMsg.includes('documents api')) &&
           (ns as any).documents
         ) {
+          let desc: any = null;
+          try {
+            desc = await pc.describeIndex(pcConn.index_name);
+          } catch {}
+          const fields = desc?.schema?.fields || {};
+          let denseField: string | null = null;
+          const textFields: string[] = [];
+
+          for (const [name, def] of Object.entries<any>(fields)) {
+            const type = def?.type || '';
+            const typeName = def?.constructor?.name || '';
+            if (type === 'dense_vector' || typeName.includes('DenseVector')) {
+              if (!denseField) denseField = name;
+            } else if (
+              type === 'string' ||
+              type === 'semantic_text' ||
+              typeName.includes('String') ||
+              typeName.includes('SemanticText')
+            ) {
+              textFields.push(name);
+            }
+          }
+
+          const doc: Record<string, any> = {
+            _id: recordId,
+            source: 'dashboard',
+            created_at: now,
+            updated_at: now,
+          };
+
+          // Only store embedding in the schema's dense_vector field if present
+          if (denseField) {
+            doc[denseField] = embedding;
+          }
+
+          if (textFields.length > 0) {
+            for (const f of textFields) {
+              doc[f] = content;
+            }
+          } else {
+            doc.content = content;
+            doc.text = content;
+          }
+
+          if (!doc.content) {
+            doc.content = content;
+          }
+
           await (ns as any).documents.upsert({
-            documents: [{
-              _id: recordId,
-              content,
-              text: content,
-              source: 'dashboard',
-              created_at: now,
-              updated_at: now,
-              embedding,
-              values: embedding,
-            }]
+            documents: [doc],
           });
         } else {
           throw upsertErr;

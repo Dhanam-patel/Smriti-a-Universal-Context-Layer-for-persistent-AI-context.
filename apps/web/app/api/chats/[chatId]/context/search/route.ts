@@ -130,8 +130,48 @@ export async function POST(
            errMsg.includes('documents api')) &&
           (ns as any).documents
         ) {
+          let desc: any = null;
+          try {
+            desc = await pc.describeIndex(pcConn.index_name);
+          } catch {}
+          const fields = desc?.schema?.fields || {};
+          let scoreBy: any[] = [];
+
+          for (const [name, def] of Object.entries<any>(fields)) {
+            const type = def?.type || '';
+            const typeName = def?.constructor?.name || '';
+            if (type === 'dense_vector' || typeName.includes('DenseVector')) {
+              scoreBy = [{ type: 'dense_vector', field: name, values: embedding }];
+              break;
+            }
+          }
+
+          if (scoreBy.length === 0) {
+            for (const [name, def] of Object.entries<any>(fields)) {
+              if (def?.embed || def?.type === 'semantic_text') {
+                scoreBy = [{ type: 'embed', field: name, query }];
+                break;
+              }
+            }
+          }
+
+          if (scoreBy.length === 0) {
+            for (const [name, def] of Object.entries<any>(fields)) {
+              const type = def?.type || '';
+              const typeName = def?.constructor?.name || '';
+              if (type === 'string' || typeName.includes('String')) {
+                scoreBy = [{ type: 'text', fields: [name], query }];
+                break;
+              }
+            }
+          }
+
+          if (scoreBy.length === 0) {
+            scoreBy = [{ type: 'text', fields: ['text'], query }];
+          }
+
           const docResp = await (ns as any).documents.search({
-            scoreBy: [{ type: 'dense_vector', field: 'embedding', values: embedding }],
+            scoreBy,
             topK: 5,
             includeFields: ['*'],
           });

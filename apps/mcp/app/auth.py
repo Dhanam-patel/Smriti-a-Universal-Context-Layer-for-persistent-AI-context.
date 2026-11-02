@@ -13,6 +13,7 @@ class PineconeConnection:
     # writes it that way), so no decryption happens here.
     api_key: str
     embedding_model: str | None
+    host: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,7 @@ def authenticate_mcp_client(request: Request) -> AuthenticatedUser:
 
     pc_resp = (
         supabase.table("pinecone_connections")
-        .select("index_name, encrypted_api_key, embedding_model")
+        .select("index_name, host, encrypted_api_key, embedding_model")
         .eq("user_id", user_id)
         .execute()
     )
@@ -54,6 +55,7 @@ def authenticate_mcp_client(request: Request) -> AuthenticatedUser:
             index_name=pc_row["index_name"],
             api_key=pc_row["encrypted_api_key"],
             embedding_model=pc_row.get("embedding_model"),
+            host=pc_row.get("host"),
         ),
         client_id=access_token.client_id,
     )

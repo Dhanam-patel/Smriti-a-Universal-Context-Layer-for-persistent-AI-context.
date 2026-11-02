@@ -161,6 +161,61 @@ def test_write_context_with_document_schema(supabase, pinecone):
     doc = upsert_call["documents"][0]
     assert doc["content"] == "doc text"
     assert doc["my_vector"] == [0.1, 0.2]
+    assert "embedding" not in doc
+    assert "values" not in doc
+
+
+def test_write_context_with_embedded_string_schema(supabase, pinecone):
+    tools._index_schema_cache.clear()
+    schema = SimpleNamespace(
+        fields={
+            "text": SimpleNamespace(
+                type="string", embed=SimpleNamespace(model="multilingual-e5-large")
+            ),
+        }
+    )
+    pinecone.describe_index.return_value = SimpleNamespace(schema=schema)
+    pinecone.index.return_value.documents = MagicMock()
+
+    result = tools.write_context(USER, {"chat": "c", "content": "embedded text"})
+    assert result == "Successfully wrote context to chat c."
+    pinecone.index.return_value.documents.upsert.assert_called_once()
+    upsert_call = pinecone.index.return_value.documents.upsert.call_args.kwargs
+    doc = upsert_call["documents"][0]
+    assert doc["text"] == "embedded text"
+    # Never attach float arrays to metadata
+    assert "embedding" not in doc
+    assert "values" not in doc
+    for key, val in doc.items():
+        assert not isinstance(val, list), f"List field {key} not allowed in metadata"
+
+
+def test_read_context_with_embedded_string_schema(supabase, pinecone):
+    tools._index_schema_cache.clear()
+    schema = SimpleNamespace(
+        fields={
+            "text": SimpleNamespace(
+                type="string", embed=SimpleNamespace(model="multilingual-e5-large")
+            ),
+        }
+    )
+    pinecone.describe_index.return_value = SimpleNamespace(schema=schema)
+    pinecone.index.return_value.documents = MagicMock()
+    pinecone.index.return_value.documents.search.return_value = SimpleNamespace(
+        matches=[
+            SimpleNamespace(
+                score=0.91,
+                get=lambda k, default=None: "hit text" if k == "content" else default,
+            )
+        ]
+    )
+
+    result = tools.read_context(USER, {"chat": "c", "query": "embedded query"})
+    assert "hit text" in result
+    search_call = pinecone.index.return_value.documents.search.call_args.kwargs
+    assert search_call["score_by"] == [
+        {"type": "embed", "field": "text", "query": "embedded query"}
+    ]
 
 
 def test_write_context_fallback_on_document_schema_error(supabase, pinecone):
