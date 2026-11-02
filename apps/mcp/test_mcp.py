@@ -8,7 +8,6 @@ Usage:
 import asyncio
 import json
 import os
-import sys
 from typing import Any
 
 import httpx
@@ -29,11 +28,14 @@ def _rpc(
     return payload
 
 
-async def main() -> int:
+class SmokeTestError(Exception):
+    """Raised when the smoke test cannot run or the server does not respond as expected."""
+
+
+async def main() -> None:
     api_key = os.environ.get("MCP_API_KEY")
     if not api_key:
-        print("Set MCP_API_KEY to a valid MCP credential.", file=sys.stderr)
-        return 2
+        raise SmokeTestError("Set MCP_API_KEY to a valid MCP credential.")
 
     headers = {"Authorization": f"Bearer {api_key}"}
 
@@ -93,11 +95,10 @@ async def main() -> int:
                     print("Sent tools/call!")
                 elif data.get("id") == 2:
                     print("SUCCESS!")
-                    return 0
+                    return
 
-    print("Stream ended without a tools/call response.", file=sys.stderr)
-    return 1
+    raise SmokeTestError("Stream ended without a tools/call response.")
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    asyncio.run(main())
