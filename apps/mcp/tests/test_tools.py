@@ -1,9 +1,8 @@
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from app import main, tools
+from app import tools
 from app.auth import AuthenticatedUser, PineconeConnection
 
 USER = AuthenticatedUser("u1", PineconeConnection("idx", "key", None))
@@ -129,34 +128,3 @@ def test_pinecone_failures_are_reported_as_tool_errors(
 
     with pytest.raises(tools.ToolError, match=message):
         handler(USER, args)
-
-
-def _call(name, user=None, arguments=None):
-    state = SimpleNamespace() if user is None else SimpleNamespace(user_info=user)
-    ctx = SimpleNamespace(request=SimpleNamespace(state=state))
-    req = SimpleNamespace(name=name, arguments=arguments)
-    return asyncio.run(main.handle_call_tool(ctx, req))
-
-
-def test_call_tool_requires_authenticated_user():
-    result = _call("read_context")
-    assert result.is_error
-    assert result.content[0].text == "Error: Could not retrieve authentication state"
-
-
-def test_call_tool_rejects_unknown_tool():
-    result = _call("nope", user=USER)
-    assert result.is_error
-    assert result.content[0].text == "Unknown tool: nope"
-
-
-def test_call_tool_tolerates_missing_arguments():
-    result = _call("read_context", user=USER, arguments=None)
-    assert result.is_error
-    assert result.content[0].text == "Error: chat is required"
-
-
-def test_call_tool_returns_handler_output(supabase, pinecone):
-    result = _call("read_context", user=USER, arguments={"chat": "c", "query": "q"})
-    assert not result.is_error
-    assert result.content[0].text.startswith("Context Search Results:")

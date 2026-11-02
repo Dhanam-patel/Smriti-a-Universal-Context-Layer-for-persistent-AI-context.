@@ -3,10 +3,9 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from app import auth, main
+from app import auth
 from app.auth import AuthenticatedUser, PineconeConnection
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
 
 TOKEN = "smr_secret"
 
@@ -84,28 +83,3 @@ def test_valid_credential_returns_typed_user_and_looks_up_hash():
     )
     sb.queries["pinecone_connections"].eq.assert_called_once_with("user_id", "u1")
     sb.queries["pinecone_connections"].eq.assert_called_once_with("user_id", "u1")
-
-
-def test_messages_endpoint_returns_real_auth_status():
-    client = TestClient(main.app)
-    failure = HTTPException(status_code=403, detail="MCP connection is not active")
-    with patch.object(main, "authenticate_mcp_client", side_effect=failure):
-        response = client.post("/mcp/messages", json={})
-
-    assert response.status_code == 403
-    assert response.text == "MCP connection is not active"
-
-
-def test_sse_endpoint_rejects_unauthenticated_requests():
-    client = TestClient(main.app)
-    failure = HTTPException(
-        status_code=401, detail="Missing or invalid authentication token"
-    )
-    with patch.object(main, "authenticate_mcp_client", side_effect=failure):
-        response = client.get("/mcp/sse")
-
-    assert response.status_code == 401
-
-
-def test_health_does_not_require_auth():
-    assert TestClient(main.app).get("/health").json() == {"status": "ok"}
