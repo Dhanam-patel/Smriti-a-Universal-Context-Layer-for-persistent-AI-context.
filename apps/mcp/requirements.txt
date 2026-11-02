@@ -1,7 +1,7 @@
-fastapi
-uvicorn
-mcp
-pinecone
-supabase
-pydantic-settings
-httpx
+fastapi>=0.162,<1
+uvicorn>=0.54,<1
+mcp>=2.3,<3
+pinecone>=10.2,<11
+supabase>=2.33,<3
+pydantic-settings>=2.16,<3
+httpx>=0.28,<1
