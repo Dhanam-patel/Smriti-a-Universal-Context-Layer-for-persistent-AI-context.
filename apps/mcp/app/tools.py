@@ -142,7 +142,7 @@ def write_context(user: AuthenticatedUser, args: ToolArguments) -> str:
     call = _prepare(user, args, text_field="content", input_type="passage")
 
     with _pinecone_errors("upsert"):
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         call.index.upsert(
             namespace=call.namespace,
             vectors=[
